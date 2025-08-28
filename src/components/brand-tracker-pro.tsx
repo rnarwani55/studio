@@ -206,7 +206,7 @@ export default function BrandTrackerPro() {
       case "staff":
         return <StaffTab staff={appState.staff} onUpdate={updateState} selectedDate={appState.selectedDate} />;
       case "inventory":
-        return <InventoryTab inventory={appState.inventory} onUpdate={updateState} />;
+        return <InventoryTab />;
       case "creditors":
         return <CreditorsTab creditors={appState.creditors} onUpdate={updateState} />;
       case "calc":
@@ -554,104 +554,16 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
     )
 }
 
-const InventoryTab = ({ inventory, onUpdate }: { inventory: AppState['inventory'], onUpdate: (updater: (prev: AppState) => AppState) => void }) => {
-    const { toast } = useToast();
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-    const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            try {
-                const data = new Uint8Array(e.target?.result as ArrayBuffer);
-                const workbook = XLSX.read(data, { type: 'array' });
-                const sheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[sheetName];
-                const json: any[] = XLSX.utils.sheet_to_json(worksheet);
-
-                const newItems: InventoryItem[] = json.map(row => ({
-                    supplier: row.Supplier,
-                    billno: String(row['Bill No.']),
-                    billdate: format(new Date((row['Bill Date'] - (25567 + 2)) * 86400 * 1000), 'yyyy-MM-dd'), // Excel date to JS date
-                    item: row.Item,
-                    sizeColourDisplay: row['Size/Colour/Display'],
-                    qty: Number(row.Qty),
-                    rate: Number(row.Rate),
-                    mrp: Number(row.MRP),
-                    hsn: String(row.HSN),
-                    cgst: Number(row.CGST),
-                    sgst: Number(row.SGST),
-                }));
-
-                onUpdate(prev => ({
-                    ...prev,
-                    inventory: { billData: [...prev.inventory.billData, ...newItems] }
-                }));
-                toast({ title: "Success", description: `${newItems.length} items imported from Excel.` });
-            } catch (error) {
-                console.error("Error importing file:", error);
-                toast({ title: "Import Error", description: "Could not read the file. Ensure it's a valid Excel file.", variant: "destructive" });
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    };
-
-    const handleExport = () => {
-        const worksheet = XLSX.utils.json_to_sheet(inventory.billData);
-        const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
-        XLSX.writeFile(workbook, "InventoryExport.xlsx");
-        toast({ title: "Exported!", description: "Inventory data has been exported to Excel." });
-    };
-
+const InventoryTab = () => {
     return (
         <Card>
-            <CardHeader>
-                <CardTitle>Inventory Management</CardTitle>
-                <CardDescription>Import from Excel or view current stock.</CardDescription>
-            </CardHeader>
-            <CardContent>
-                <div className="flex gap-2 mb-4">
-                    <Button onClick={() => fileInputRef.current?.click()}>Import from Excel</Button>
-                    <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".xlsx, .xls" />
-                    <Button onClick={handleExport} variant="outline">Export to Excel</Button>
-                </div>
-                <div className="max-h-96 overflow-y-auto">
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>Item</TableHead>
-                                <TableHead>Supplier</TableHead>
-                                <TableHead>Bill No.</TableHead>
-                                <TableHead>Qty</TableHead>
-                                <TableHead>Rate</TableHead>
-                                <TableHead>MRP</TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            {inventory.billData.length > 0 ? inventory.billData.map((item, index) => (
-                                <TableRow key={index}>
-                                    <TableCell>{item.item}</TableCell>
-                                    <TableCell>{item.supplier}</TableCell>
-                                    <TableCell>{item.billno}</TableCell>
-                                    <TableCell>{item.qty}</TableCell>
-                                    <TableCell>{item.rate.toFixed(2)}</TableCell>
-                                    <TableCell>{item.mrp.toFixed(2)}</TableCell>
-                                </TableRow>
-                            )) : (
-                                <TableRow>
-                                    <TableCell colSpan={6} className="text-center">No inventory data.</TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
+            <CardContent className="p-0">
+                <iframe src="/inventory.html" style={{ border: 'none', width: '100%', height: 'calc(100vh - 200px)' }} title="Inventory Management"></iframe>
             </CardContent>
         </Card>
     );
 };
+
 
 const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate: (updater: (prev: AppState) => AppState) => void }) => {
     const [name, setName] = React.useState("");

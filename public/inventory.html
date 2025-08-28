@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory Bill Management</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+        #toast {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000;
+            background: #111827;
+            color: #fff;
+            padding: 12px 20px;
+            border-radius: 8px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s;
+            font-size: 1rem;
+            min-width: 170px;
+            text-align: center;
+        }
+        #toast.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-backdrop {
+            background-color: rgba(0,0,0,0.5);
+        }
+        .qty-input { text-align: center; }
+        .confirmation-table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+        .confirmation-table th, .confirmation-table td { border: 1px solid #4a5568; padding: 8px; font-size: 0.875rem; text-align: left; vertical-align: middle; }
+        .confirmation-table th { background-color: #4a5568; color: white; }
+        .qty-btn {
+            background-color: #e5e7eb; border: 1px solid #d1d5db; color: #374151;
+            width: 28px; height: 28px; transition: background-color 0.15s ease;
+            display: flex; align-items: center; justify-content: center; font-weight: bold;
+        }
+        .qty-btn:hover:not(:disabled) { background-color: #d1d5db; }
+        .qty-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .qty-btn:first-child { border-radius: 0.375rem 0 0 0.375rem; }
+        .qty-btn:last-child { border-radius: 0 0.375rem 0.375rem 0; }
+        .qty-display {
+             -moz-appearance: textfield; height: 28px; border: 1px solid #d1d5db;
+        }
+        .qty-display::-webkit-outer-spin-button, .qty-display::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+        .delete-staged-btn { background: none; border: none; cursor: pointer; color: #ef4444; }
+        .delete-staged-btn:hover { color: #b91c1c; }
+
+        #inventory-modal .modal-content {
+            max-width: 95%; 
+            width: auto;
+            max-height: 90vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #ffffff;
+            z-index: 1001;
+        }
+        #inventory-modal .modal-body {
+            overflow-y: auto;
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+            flex-grow: 1;
+        }
+        #inventory-modal .modal-body::-webkit-scrollbar {
+            display: none;
+        }
+        .confirmation-table td {
+            word-wrap: break-word;
+            white-space: normal;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <div class="max-w-4xl mx-auto p-4 sm:p-6">
+        <h1 class="text-3xl font-bold text-gray-800 mb-1">Inventory Bill Management</h1>
+        <p class="text-gray-500 mb-6">Create and manage your inventory bills efficiently.</p>
+
+        <!-- INVENTORY BILL CONTENT -->
+        <div data-panel="inventory">
+            <div class="bg-white p-4 rounded-lg shadow-md mb-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div><label for="supplier" class="block text-sm font-medium text-gray-700">Supplier Name</label><input list="dealerList" id="supplier" onchange="saveDealer(this.value)" oninput="autoSaveForm()" class="mt-1 block w-full p-2 border rounded bg-gray-50 uppercase"></div>
+                <datalist id="dealerList"></datalist>
+                <div><label for="billno" class="block text-sm font-medium text-gray-700">Bill No</label><input type="text" id="billno" oninput="autoSaveForm()" class="mt-1 block w-full p-2 border rounded bg-gray-50 uppercase"></div>
+                <div><label for="billdate" class="block text-sm font-medium text-gray-700">Bill Date</label><input type="text" id="billdate" oninput="autoSaveForm()" class="mt-1 block w-full p-2 border rounded bg-gray-50 uppercase"></div>
+                <div><label for="hsn" class="block text-sm font-medium text-gray-700">HSN Code</label><input type="text" id="hsn" onchange="storeHSN(this.value)" oninput="autoSaveForm()" class="mt-1 block w-full p-2 border rounded bg-gray-50 uppercase"></div>
+                <div><label for="cgst" class="block text-sm font-medium text-gray-700">CGST (%)</label><input type="number" id="cgst" value="2.5" oninput="autoSaveForm()" class="mt-1 block w-full p-2 border rounded bg-gray-50"></div>
+                <div><label for="sgst" class="block text-sm font-medium text-gray-700">SGST (%)</label><input type="number" id="sgst" value="2.5" oninput="autoSaveForm()" class="mt-1 block w-full p-2 border rounded bg-gray-50"></div>
+                <div><label for="marginPercentage" class="block text-sm font-medium text-gray-700">Margin (%)</label><input type="number" id="marginPercentage" value="60" oninput="saveMargin(); updateMRPPreview(); autoSaveForm();" class="mt-1 block w-full p-2 border rounded bg-gray-50"></div>
+                <div><label for="roundTo" class="block text-sm font-medium text-gray-700">Round MRP</label><select id="roundTo" onchange="updateMRPPreview()" oninput="autoSaveForm()" class="mt-1 block w-full p-2 border rounded bg-gray-50"><option value="49">to X49/X99</option><option value="99">to X99</option></select></div>
+            </div>
+
+            <div class="bg-white p-4 rounded-lg shadow-md mb-6 text-center">
+                <label class="font-medium text-gray-700">Size Entry Mode:</label>
+                <div id="sizeModeContainer" class="flex flex-wrap justify-center gap-2 mt-2" role="group">
+                    <button type="button" id="modeBtn-manual" onclick="saveSizeMode('manual')" class="size-mode-btn px-4 py-2 text-sm font-medium">Manual</button>
+                    <button type="button" id="modeBtn-checkbox-jeans" onclick="saveSizeMode('checkbox-jeans')" class="size-mode-btn px-4 py-2 text-sm font-medium">Jeans</button>
+                    <button type="button" id="modeBtn-checkbox-shirts" onclick="saveSizeMode('checkbox-shirts')" class="size-mode-btn px-4 py-2 text-sm font-medium">Shirts</button>
+                </div>
+            </div>
+            
+            <div id="itemForm" class="bg-white p-4 rounded-lg shadow-md mb-6 space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <input type="text" id="itemname" onkeydown="handleFormInputKeydown(event, 'itemname')" oninput="autoSaveForm()" placeholder="Item Name" onblur="suggestLastRate(this.value)" class="p-2 border rounded bg-gray-50 uppercase md:col-span-1">
+                    <input type="number" id="rate" onkeydown="handleFormInputKeydown(event, 'rate')" oninput="updateMRPPreview(); autoSaveForm();" placeholder="Purchase Rate" class="p-2 border rounded bg-gray-50 md:col-span-1">
+                    <input type="text" id="mrppreview" readonly placeholder="MRP Preview" class="p-2 border rounded bg-gray-200 text-sm md:col-span-1">
+                </div>
+                <div id="manualSizeInput" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <input type="text" id="size" onkeydown="handleFormInputKeydown(event, 'size')" oninput="autoSaveForm()" placeholder="Size (e.g., S TO XXL, 30 TO 42, 3XL)" class="p-2 border rounded bg-gray-50 uppercase">
+                    <input id="colour" onkeydown="handleFormInputKeydown(event, 'colour')" oninput="autoSaveForm()" placeholder="Colour" class="p-2 border rounded bg-gray-50 uppercase">
+                </div>
+                <div id="checkboxSizeContainer" style="display:none;" class="space-y-4">
+                    <input id="colourCheckboxMode" onkeydown="handleFormInputKeydown(event, 'colourCheckboxMode')" oninput="autoSaveForm()" placeholder="Colour (for all checked sizes)" class="w-full p-2 border rounded bg-gray-50 uppercase">
+                    <div id="checkboxSizeInput" class="p-4 border-t border-gray-200"></div>
+                </div>
+                <button type="button" onclick="addSizes()" class="w-full bg-green-600 text-white font-bold py-2.5 px-4 rounded hover:bg-green-700 transition-colors flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                    Add Item(s) to Bill
+                </button>
+            </div>
+
+            <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+                <div class="mb-4">
+                    <input type="text" id="searchInput" onkeyup="filterTable()" placeholder="🔍 Search for items in the bill..." class="w-full p-2 border rounded bg-gray-50">
+                </div>
+                <div class="overflow-x-auto">
+                    <table id="billTable" class="w-full text-sm text-left text-gray-500">
+                        <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3">Supplier/Bill/Date</th><th scope="col" class="px-4 py-3">Item</th><th scope="col" class="px-4 py-3">Size/Colour</th>
+                                <th scope="col" class="px-4 py-3">Qty</th><th scope="col" class="px-4 py-3">Rate</th><th scope="col" class="px-4 py-3">MRP</th>
+                                <th scope="col" class="px-4 py-3 text-center">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-4 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold mb-4 text-center">Actions</h3>
+                    <div id="actionsContainer" class="grid grid-cols-2 lg:grid-cols-3 gap-3">
+                        <button onclick="downloadExcel()" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded hover:bg-blue-700 transition">Export Excel</button>
+                        <button onclick="exportPDF()" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded hover:bg-blue-700 transition">Export PDF</button>
+                        <button onclick="importExcel()" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded hover:bg-blue-700 transition">Import Excel</button>
+                        <button onclick="undoActionInventory()" class="bg-yellow-500 text-black font-semibold py-2 px-4 rounded hover:bg-yellow-600 transition">Undo</button>
+                        <button onclick="redoActionInventory()" class="bg-cyan-500 text-white font-semibold py-2 px-4 rounded hover:bg-cyan-600 transition">Redo</button>
+                        <button onclick="clearAllInventory()" class="bg-red-600 text-white font-semibold py-2 px-4 rounded hover:bg-red-700 transition col-span-2 lg:col-span-1">Clear All</button>
+                    </div>
+                </div>
+                <div id="quantitySummary" class="bg-white p-4 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold mb-4 text-center">Item Quantity Summary</h3>
+                    <ul id="summaryList" class="space-y-2"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODALS & TOAST -->
+    <div id="inventory-modal" class="fixed inset-0 modal-backdrop hidden z-50 flex items-center justify-center">
+        <div class="modal-content bg-white rounded-lg shadow-xl p-4 sm:p-6">
+            <div class="modal-body"></div>
+            <div class="modal-footer mt-4 pt-4 border-t border-gray-200 flex justify-end gap-3"></div>
+        </div>
+    </div>
+    <div id="toast"></div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Global state object
+        window.state = {
+            inventory: {
+                billData: [],
+                undoStack: [],
+                redoStack: [],
+                itemsToConfirm: [],
+                updatesToConfirm: [],
+                currentBatchSource: null,
+            }
+        };
+        const LSK = 'inventory_app_data_v1';
+        
+        // ---- DOM Element Selection ----
+        const inventoryModal = document.getElementById('inventory-modal');
+        const invModalBody = inventoryModal.querySelector('.modal-body');
+        const invModalFooter = inventoryModal.querySelector('.modal-footer');
+        const toastEl = document.getElementById('toast');
+        const jeansSizes = Array.from({ length: (44 - 30) / 2 + 1 }, (_, i) => 30 + i * 2);
+        const shirtSizes = ["S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL"];
+
+        // ---- STATE MANAGEMENT & UTILITY FUNCTIONS ----
+        let lastRate = '';
+        let lastItem = '';
+        let currentSizeMode = "manual";
+
+        function showToast(msg) {
+            toastEl.textContent = msg;
+            toastEl.classList.add('show');
+            setTimeout(() => toastEl.classList.remove('show'), 2500);
+        }
+
+        function convertToYYYYMMDD(dateString) {
+            if (!dateString) return '';
+            if (dateString.match(/^\d{4}-\d{2}-\d{2}$/)) return dateString;
+            const parts = dateString.split('/');
+            if (parts.length === 3) return `${parts[2]}-${parts[1]}-${parts[0]}`;
+            const date = new Date(dateString);
+            return !isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : '';
+        }
+
+        function convertToDDMMYYYY(dateStringYYYYMMDD) {
+            if (!dateStringYYYYMMDD) return '';
+            const date = new Date(dateStringYYYYMMDD + 'T00:00:00');
+            if (isNaN(date.getTime())) return '';
+            const day = String(date.getDate()).padStart(2, '0');
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const year = date.getFullYear();
+            return `${day}/${month}/${year}`;
+        }
+
+        function loadState() {
+            const data = JSON.parse(localStorage.getItem(LSK) || '{}');
+            state.inventory = data.inventory || { billData: [], undoStack: [], redoStack: [], itemsToConfirm: [], updatesToConfirm: [], currentBatchSource: null };
+            state.inventory.billData.forEach(item => {
+                if (item.billdate && item.billdate.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+                    item.billdate = convertToYYYYMMDD(item.billdate);
+                }
+            });
+        }
+        
+        function saveState() {
+            localStorage.setItem(LSK, JSON.stringify(state));
+        }
+        
+        setInterval(saveState, 5000);
+
+        function renderAll() {
+            loadDealers();
+            updateMRPPreview();
+            renderBillTable();
+            updateQuantitySummary();
+            saveSizeMode(localStorage.getItem("sizeEntryMode") || "manual");
+        }
+
+        // --- INVENTORY APP LOGIC ---
+        let inventoryConfirmKeyListener = null;
+
+        function showMessageBoxInventory(contentHTML, buttonsConfig, inputConfig = null) {
+            if (inventoryConfirmKeyListener) document.removeEventListener('keydown', inventoryConfirmKeyListener);
+            invModalBody.innerHTML = contentHTML;
+            
+            let inputElement = null;
+            if (inputConfig) {
+                inputElement = document.createElement('input');
+                inputElement.type = inputConfig.type;
+                inputElement.id = inputConfig.id;
+                inputElement.placeholder = inputConfig.placeholder;
+                inputElement.className = 'w-full p-2 border rounded bg-gray-50 uppercase mb-4';
+                invModalBody.appendChild(inputElement);
+            }
+
+            invModalFooter.innerHTML = buttonsConfig.map(btn => `<button class="${btn.class} font-semibold py-2 px-4 rounded transition focus:outline-none focus:ring-2 focus:ring-offset-2" data-action="${btn.action}">${btn.text}</button>`).join('');
+            inventoryModal.classList.remove('hidden');
+
+            return new Promise(resolve => {
+                const actionButtons = Array.from(invModalFooter.querySelectorAll('button[data-action]'));
+                if (inputElement) {
+                    setTimeout(() => inputElement.focus(), 50);
+                    inputElement.addEventListener('keydown', e => { 
+                        if (e.key === 'Enter') { 
+                            e.preventDefault(); 
+                            const confirmButton = invModalFooter.querySelector('[data-action="confirm"], [data-action="save"]');
+                            confirmButton?.click();
+                        }
+                    });
+                }
+                
+                if (actionButtons.length > 0) {
+                    let focusedButtonIndex = inputElement ? -1 : 0;
+                    if (!inputElement) setTimeout(() => actionButtons[focusedButtonIndex].focus(), 50);
+
+                    inventoryConfirmKeyListener = (e) => {
+                        if (e.key === 'ArrowRight') { 
+                            e.preventDefault(); 
+                            focusedButtonIndex = (focusedButtonIndex + 1) % actionButtons.length; 
+                            actionButtons[focusedButtonIndex].focus(); 
+                        } else if (e.key === 'ArrowLeft') { 
+                            e.preventDefault(); 
+                            focusedButtonIndex = (focusedButtonIndex - 1 + actionButtons.length) % actionButtons.length; 
+                            actionButtons[focusedButtonIndex].focus(); 
+                        } else if (e.key === 'Enter' && document.activeElement.tagName === 'BUTTON') { 
+                            e.preventDefault(); 
+                            document.activeElement.click();
+                        }
+                    };
+                    document.addEventListener('keydown', inventoryConfirmKeyListener);
+                }
+                
+                actionButtons.forEach(button => {
+                    button.onclick = () => {
+                        inventoryModal.classList.add('hidden');
+                        if (inventoryConfirmKeyListener) document.removeEventListener('keydown', inventoryConfirmKeyListener);
+                        inventoryConfirmKeyListener = null;
+                        resolve({ action: button.dataset.action, inputValue: inputElement ? inputElement.value : null });
+                    };
+                });
+            });
+        }
+        
+        window.saveSizeMode = function(mode) {
+            currentSizeMode = mode;
+            localStorage.setItem("sizeEntryMode", mode);
+            toggleSizeModeUI();
+        }
+
+        function toggleSizeModeUI() {
+            document.getElementById("manualSizeInput").style.display = currentSizeMode === 'manual' ? 'grid' : 'none';
+            document.getElementById("checkboxSizeContainer").style.display = currentSizeMode.startsWith('checkbox') ? 'block' : 'none';
+            document.querySelectorAll('.size-mode-btn').forEach(btn => {
+                btn.classList.remove('bg-blue-600', 'text-white');
+                btn.classList.add('bg-gray-200', 'text-gray-900', 'hover:bg-gray-300');
+            });
+            const activeBtn = document.getElementById(`modeBtn-${currentSizeMode}`);
+            if (activeBtn) {
+                activeBtn.classList.add('bg-blue-600', 'text-white');
+                activeBtn.classList.remove('bg-gray-200');
+            }
+            const checkboxDiv = document.getElementById("checkboxSizeInput");
+            if (currentSizeMode === 'checkbox-jeans') checkboxDiv.innerHTML = generateSizeCheckboxesHTML('jeans');
+            else if (currentSizeMode === 'checkbox-shirts') checkboxDiv.innerHTML = generateSizeCheckboxesHTML('shirts');
+        }
+
+        function generateSizeCheckboxesHTML(type) {
+            const sizes = type === 'jeans' ? jeansSizes : shirtSizes;
+            let html = `<div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-x-6 gap-y-4">`;
+            sizes.forEach(size => {
+                html += `
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <input type="checkbox" id="size${size}" value="${size}" class="size-checkbox h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                            <label for="size${size}" class="ml-3 block text-sm font-medium text-gray-900 uppercase">${size}</label>
+                        </div>
+                        <div class="qty-controls flex items-center">
+                            <button type="button" class="qty-btn" onclick="adjustCheckboxQuantity('${size}', -1)" disabled>-</button>
+                            <input type="number" value="1" min="1" class="qty-display w-12 text-center bg-transparent" data-size="${size}" disabled>
+                            <button type="button" class="qty-btn" onclick="adjustCheckboxQuantity('${size}', 1)" disabled>+</button>
+                        </div>
+                    </div>`;
+            });
+            return html + `</div>`;
+        }
+
+        window.undoActionInventory = function() {
+            if (state.inventory.undoStack.length === 0) return showMessageBoxInventory("<p>Nothing to undo.</p>", [{ text: 'OK', class: 'bg-blue-600 text-white', action: 'ok' }]);
+            state.inventory.redoStack.push(JSON.parse(JSON.stringify(state.inventory.billData)));
+            state.inventory.billData = state.inventory.undoStack.pop();
+            renderBillTable(); updateQuantitySummary(); saveState();
+        }
+
+        window.redoActionInventory = function() {
+            if (state.inventory.redoStack.length === 0) return showMessageBoxInventory("<p>Nothing to redo.</p>", [{ text: 'OK', class: 'bg-blue-600 text-white', action: 'ok' }]);
+            state.inventory.undoStack.push(JSON.parse(JSON.stringify(state.inventory.billData)));
+            state.inventory.billData = state.inventory.redoStack.pop();
+            renderBillTable(); updateQuantitySummary(); saveState();
+        }
+
+        window.saveDealer = function(name) {
+            let dealers = JSON.parse(localStorage.getItem("dealers") || "[]");
+            dealers = [name, ...dealers.filter(d => d.toUpperCase() !== name.toUpperCase())].slice(0, 10);
+            localStorage.setItem("dealers", JSON.stringify(dealers));
+            loadDealers();
+        }
+
+        function loadDealers() {
+            const list = document.getElementById("dealerList");
+            list.innerHTML = (JSON.parse(localStorage.getItem("dealers") || "[]")).map(d => `<option value="${d}"></option>`).join('');
+        }
+
+        window.saveMargin = function() { localStorage.setItem("marginPercentage", document.getElementById("marginPercentage").value); }
+        window.storeHSN = function(value) { localStorage.setItem("storedHSN", value.toUpperCase()); }
+
+        window.suggestLastRate = function(itemName) {
+            const name = itemName.trim().toUpperCase();
+            if (!name) return;
+            const match = [...state.inventory.billData].reverse().find(d => d.item === name);
+            if (match) { document.getElementById('rate').value = match.rate; updateMRPPreview(); }
+        }
+
+        window.autoSaveForm = function() {
+            const data = {
+                supplier: document.getElementById("supplier").value, billno: document.getElementById("billno").value,
+                billdate: convertToYYYYMMDD(document.getElementById("billdate").value),
+                itemname: document.getElementById("itemname").value,
+                rate: document.getElementById("rate").value, size: document.getElementById("size").value,
+                colour: document.getElementById("colour").value, colourCheckboxMode: document.getElementById("colourCheckboxMode").value,
+                hsn: document.getElementById("hsn").value, cgst: parseFloat(document.getElementById("cgst").value),
+                sgst: parseFloat(document.getElementById("sgst").value), marginPercentage: parseFloat(document.getElementById("marginPercentage").value),
+                roundTo: document.getElementById("roundTo").value,
+            };
+            localStorage.setItem("savedFormData", JSON.stringify(data));
+        }
+
+        window.updateMRPPreview = function() {
+            const rate = parseFloat(document.getElementById("rate").value);
+            const margin = parseFloat(document.getElementById("marginPercentage").value);
+            const preview = document.getElementById("mrppreview");
+            if (!rate || !margin) { preview.value = ''; return; }
+            const rawMrp = rate * (1 + margin / 100);
+            const mrp = calculateRoundedMRP(rawMrp);
+            preview.value = `Raw: ₹${rawMrp.toFixed(2)} → MRP: ₹${mrp}`;
+        }
+
+        function calculateRoundedMRP(rawMrp) {
+            const roundBase = parseInt(document.getElementById("roundTo").value);
+            const hundredFloor = Math.floor(rawMrp / 100) * 100;
+            let candidates = [hundredFloor + roundBase];
+            if (roundBase === 49) candidates.push(hundredFloor + 99);
+            if (Math.abs(rawMrp - (hundredFloor + 100 + roundBase)) < Math.abs(rawMrp - candidates[candidates.length - 1])) {
+                candidates.push(hundredFloor + 100 + roundBase);
+                if (roundBase === 49) candidates.push(hundredFloor + 100 + 99);
+            }
+            return candidates.reduce((closest, current) => (Math.abs(current - rawMrp) < Math.abs(closest - rawMrp) ? current : closest), candidates[0]);
+        }
+
+        function expandSizes(input) {
+            const garmentSizes = ["S", "M", "L", "XL", "XXL", "3XL", "4XL", "5XL", "6XL"];
+            const results = [];
+            const tokens = input.toUpperCase().split(/\s+/).filter(t => t);
+            for (let i = 0; i < tokens.length; i++) {
+                if (i + 1 < tokens.length && tokens[i + 1] === 'TO' && i + 2 < tokens.length) {
+                    const [startToken, , endToken] = [tokens[i], tokens[i+1], tokens[i+2]];
+                    const startIndex = garmentSizes.indexOf(startToken);
+                    const endIndex = garmentSizes.indexOf(endToken);
+                    if (startIndex !== -1 && endIndex !== -1 && startIndex <= endIndex) {
+                        for (let j = startIndex; j <= endIndex; j++) results.push({ size: garmentSizes[j], qty: 1 });
+                    } else if (!isNaN(startToken) && !isNaN(endToken)) {
+                        for (let j = parseInt(startToken); j <= parseInt(endToken); j += 2) results.push({ size: j.toString(), qty: 1 });
+                    }
+                    i += 2;
+                } else {
+                    const match = tokens[i].match(/^([A-Z0-9]+)(\d*)$/);
+                    if (match) results.push({ size: match[1], qty: parseInt(match[2] || "1") });
+                }
+            }
+            return results;
+        }
+
+        window.adjustCheckboxQuantity = function(size, delta) {
+            const qtyDisplay = document.querySelector(`.qty-display[data-size="${size}"]`);
+            let newQty = (parseInt(qtyDisplay.value) || 1) + delta;
+            qtyDisplay.value = newQty < 1 ? 1 : newQty;
+        }
+
+        window.addSizes = async function() {
+            const item = document.getElementById("itemname").value.trim().toUpperCase() || lastItem;
+            const rate = parseFloat(document.getElementById("rate").value) || lastRate;
+            if (!item || !rate) return;
+            lastItem = item; lastRate = rate;
+            let sizes = [];
+            let colour = "";
+            if (currentSizeMode === "manual") {
+                sizes = expandSizes(document.getElementById("size").value);
+                colour = document.getElementById("colour").value.trim().toUpperCase();
+            } else {
+                colour = document.getElementById("colourCheckboxMode").value.trim().toUpperCase();
+                document.querySelectorAll('#checkboxSizeInput .size-checkbox:checked').forEach(cb => {
+                    const qty = parseInt(document.querySelector(`.qty-display[data-size="${cb.value}"]`).value) || 1;
+                    sizes.push({ size: cb.value, qty });
+                });
+            }
+            if (sizes.length === 0 || (!colour && currentSizeMode !== 'checkbox-jeans')) {
+                return showMessageBoxInventory("<p>Please enter all required fields (Size and Colour).</p>", [{ text: 'OK', class: 'bg-blue-600 text-white', action: 'ok' }]);
+            }
+            const baseItemData = {
+                supplier: document.getElementById("supplier").value.trim().toUpperCase(),
+                billno: document.getElementById("billno").value.trim().toUpperCase(),
+                billdate: convertToYYYYMMDD(document.getElementById("billdate").value),
+                item, rate,
+                hsn: localStorage.getItem("storedHSN") || '',
+                cgst: parseFloat(document.getElementById("cgst").value),
+                sgst: parseFloat(document.getElementById("sgst").value),
+            };
+            state.inventory.currentBatchSource = { ...baseItemData, sizes: JSON.parse(JSON.stringify(sizes)) };
+            const mrp = calculateRoundedMRP(rate * (1 + parseFloat(document.getElementById("marginPercentage").value) / 100));
+            const newItems = sizes.map(s => ({ ...baseItemData, mrp, sizeColourDisplay: `${s.size}${colour ? '     ' + colour : ''}`, qty: s.qty }));
+            const { newAdditions, newUpdates } = await processDuplicates(newItems);
+            state.inventory.itemsToConfirm.push(...newAdditions);
+            state.inventory.updatesToConfirm.push(...newUpdates);
+            previewAndConfirmAdd();
+        }
+
+        async function processDuplicates(items) {
+            const newAdditions = [], newUpdates = [];
+            for (const itemToAdd of items) {
+                const exists = state.inventory.billData.some(d => d.item === itemToAdd.item && d.sizeColourDisplay === itemToAdd.sizeColourDisplay) ||
+                               state.inventory.itemsToConfirm.some(d => d.item === itemToAdd.item && d.sizeColourDisplay === itemToAdd.sizeColourDisplay) ||
+                               state.inventory.updatesToConfirm.some(d => d.item.item === itemToAdd.item && d.item.sizeColourDisplay === itemToAdd.sizeColourDisplay);
+                if (exists) {
+                    const result = await showMessageBoxInventory(`<p>Item <strong>${itemToAdd.item} (${itemToAdd.sizeColourDisplay})</strong> already exists.</p>`,
+                        [{ text: `Add Qty (${itemToAdd.qty})`, class: 'bg-blue-600 text-white', action: 'add_quantity' }, { text: 'Add as New', class: 'bg-gray-500 text-white', action: 'add_new' }, { text: 'Cancel', class: 'bg-red-600 text-white', action: 'cancel' }]);
+                    if (result.action === 'add_quantity') newUpdates.push({ item: itemToAdd, qtyToAdd: itemToAdd.qty });
+                    else if (result.action === 'add_new') newAdditions.push(itemToAdd);
+                } else {
+                    newAdditions.push(itemToAdd);
+                }
+            }
+            return { newAdditions, newUpdates };
+        }
+
+        function generatePopupSummaryHTML(items, updates) {
+            if (!items?.length && !updates?.length) return '';
+            const summary = {};
+            let totalQty = 0, totalRateValue = 0, totalMrpValue = 0;
+            [...items, ...updates.map(u => ({...u.item, qty: u.qtyToAdd}))].forEach(item => {
+                const { qty = 0, rate = 0, mrp = 0 } = item;
+                summary[item.item] = (summary[item.item] || 0) + qty;
+                totalQty += qty;
+                totalRateValue += qty * rate;
+                totalMrpValue += qty * mrp;
+            });
+            let html = `<div class="mt-4 pt-4 border-t"><h4 class="font-semibold text-center mb-2">Batch Summary</h4><ul class="text-sm space-y-1">`;
+            Object.keys(summary).sort().forEach(itemName => { html += `<li class="flex justify-between"><span>${itemName}:</span><strong>${summary[itemName]} pcs</strong></li>`; });
+            html += `<li class="flex justify-between font-bold border-t mt-2 pt-2"><span>Total Quantity:</span><span>${totalQty} pcs</span></li>
+                     <li class="flex justify-between font-bold"><span>Total Value:</span><span>₹${totalRateValue.toFixed(2)}</span></li>
+                     <li class="flex justify-between font-bold"><span>Total MRP:</span><span>₹${totalMrpValue.toFixed(2)}</span></li></ul></div>`;
+            return html;
+        }
+
+        function updateStagedQuantitiesFromPopup() {
+            document.querySelectorAll('[data-update-index]').forEach(input => {
+                const index = parseInt(input.dataset.updateIndex);
+                if (state.inventory.updatesToConfirm[index]) state.inventory.updatesToConfirm[index].qtyToAdd = parseInt(input.value) || 1;
+            });
+            document.querySelectorAll('[data-staging-index]').forEach(input => {
+                const index = parseInt(input.dataset.stagingIndex);
+                if (state.inventory.itemsToConfirm[index]) state.inventory.itemsToConfirm[index].qty = parseInt(input.value) || 1;
+            });
+        }
+
+        window.deleteStagedItem = function(type, index) {
+            updateStagedQuantitiesFromPopup(); 
+            if (type === 'update') state.inventory.updatesToConfirm.splice(index, 1);
+            if (type === 'item') state.inventory.itemsToConfirm.splice(index, 1);
+            previewAndConfirmAdd();
+        }
+
+        async function previewAndConfirmAdd() {
+            if (state.inventory.itemsToConfirm.length === 0 && state.inventory.updatesToConfirm.length === 0) return;
+            let updateHtml = state.inventory.updatesToConfirm.length > 0 ? `<p class="mt-4 font-semibold">Updates:</p><ul>` + state.inventory.updatesToConfirm.map((upd, index) => 
+                `<li class="text-sm ml-4 list-disc flex justify-between items-center my-2">${upd.item.item} (${upd.item.sizeColourDisplay}) <div class="flex items-center"><div class="qty-controls flex items-center"><button type="button" class="qty-btn" onclick="adjustUpdateQty(${index}, -1)">-</button><input type="number" value="${upd.qtyToAdd}" min="1" class="qty-display w-12 text-center" data-update-index="${index}"><button type="button" class="qty-btn" onclick="adjustUpdateQty(${index}, 1)">+</button></div><button class="delete-staged-btn ml-2" onclick="deleteStagedItem('update', ${index})">🗑️</button></div></li>`
+            ).join('') + `</ul>` : '';
+
+            let tableHtml = state.inventory.itemsToConfirm.length > 0 ? `<p class="mt-4 font-semibold">New Items:</p><table class="confirmation-table"><thead><tr><th>Item</th><th>Size/Colour</th><th class="text-center">Qty</th><th class="text-center">Action</th></tr></thead><tbody>` + state.inventory.itemsToConfirm.map((item, index) => 
+                `<tr><td>${item.item}</td><td>${item.sizeColourDisplay}</td><td><div class="qty-controls flex items-center justify-center"><button type="button" class="qty-btn" onclick="adjustStagingQty(${index}, -1)">-</button><input type="number" value="${item.qty}" min="1" class="qty-display w-12 text-center" data-staging-index="${index}"><button type="button" class="qty-btn" onclick="adjustStagingQty(${index}, 1)">+</button></div></td><td class="text-center"><button class="delete-staged-btn" onclick="deleteStagedItem('item', ${index})">🗑️</button></td></tr>`
+            ).join('') + `</tbody></table>` : '';
+
+            const summaryHtml = generatePopupSummaryHTML(state.inventory.itemsToConfirm, state.inventory.updatesToConfirm);
+            const finalHtml = (updateHtml + tableHtml === '') ? "<p>No changes to confirm.</p>" : updateHtml + tableHtml + summaryHtml;
+            const result = await showMessageBoxInventory(finalHtml, [ { text: 'Confirm All', class: 'bg-green-600 text-white', action: 'confirm_add' }, { text: 'Add Another Colour', class: 'bg-blue-600 text-white', action: 'add_another_color' }, { text: 'Cancel', class: 'bg-gray-500 text-white', action: 'cancel' }]);
+            
+            updateStagedQuantitiesFromPopup();
+            
+            if (result.action === 'confirm_add') {
+                state.inventory.undoStack.push(JSON.parse(JSON.stringify(state.inventory.billData)));
+                state.inventory.redoStack = [];
+                state.inventory.updatesToConfirm.forEach(upd => {
+                    const existingItem = state.inventory.billData.find(d => d.item === upd.item.item && d.sizeColourDisplay === upd.item.sizeColourDisplay);
+                    if (existingItem) existingItem.qty += upd.qtyToAdd;
+                });
+                state.inventory.billData.push(...state.inventory.itemsToConfirm);
+                state.inventory.itemsToConfirm = []; state.inventory.updatesToConfirm = []; state.inventory.currentBatchSource = null;
+                renderBillTable(); updateQuantitySummary(); saveState();
+                document.getElementById('itemname').value = lastItem; document.getElementById('rate').value = lastRate;
+                updateMRPPreview();
+                if (currentSizeMode.startsWith('checkbox')) {
+                    document.getElementById('colourCheckboxMode').value = '';
+                    document.querySelectorAll('#checkboxSizeInput .size-checkbox').forEach(cb => { cb.checked = false; });
+                    toggleSizeModeUI();
+                }
+                document.getElementById('size').value = ''; document.getElementById('colour').value = '';
+            } else if (result.action === 'add_another_color') {
+                const promptResult = await showMessageBoxInventory("<p>Enter new color:</p>", [{ text: 'Add', class: 'bg-green-600 text-white', action: 'confirm' }, { text: 'Cancel', class: 'bg-gray-500 text-white', action: 'cancel' }], { type: 'text', id: 'newColourInput', placeholder: 'New Colour' });
+                if (promptResult.action === 'confirm' && promptResult.inputValue) {
+                    const newColour = promptResult.inputValue.trim().toUpperCase();
+                    const { sizes, ...baseItemData } = state.inventory.currentBatchSource;
+                    const mrp = calculateRoundedMRP(baseItemData.rate * (1 + parseFloat(document.getElementById("marginPercentage").value) / 100));
+                    const newItems = sizes.map(s => ({...baseItemData, mrp, sizeColourDisplay: `${s.size}     ${newColour}`, qty: s.qty}));
+                    const { newAdditions, newUpdates } = await processDuplicates(newItems);
+                    state.inventory.itemsToConfirm.push(...newAdditions);
+                    state.inventory.updatesToConfirm.push(...newUpdates);
+                }
+                previewAndConfirmAdd();
+            } else {
+                state.inventory.itemsToConfirm = []; state.inventory.updatesToConfirm = []; state.inventory.currentBatchSource = null;
+            }
+        }
+
+        window.adjustStagingQty = function(index, delta) { const input = document.querySelector(`[data-staging-index="${index}"]`); let qty = parseInt(input.value) + delta; input.value = qty < 1 ? 1 : qty; }
+        window.adjustUpdateQty = function(index, delta) { const input = document.querySelector(`[data-update-index="${index}"]`); let qty = parseInt(input.value) + delta; input.value = qty < 1 ? 1 : qty; }
+
+        window.deleteRow = function(rowIndex) {
+            showMessageBoxInventory("<p>Delete this item?</p>", [{text: 'Yes', class: 'bg-red-600 text-white', action: 'confirm'}, {text: 'No', class: 'bg-gray-500 text-white', action: 'cancel'}])
+            .then(result => { if(result.action === 'confirm') { state.inventory.undoStack.push(JSON.parse(JSON.stringify(state.inventory.billData))); state.inventory.redoStack = []; state.inventory.billData.splice(rowIndex, 1); renderBillTable(); updateQuantitySummary(); saveState(); }});
+        }
+
+        window.clearAllInventory = function() {
+            showMessageBoxInventory("<p>Clear all inventory entries?</p>", [{text: 'Yes', class: 'bg-red-600 text-white', action: 'confirm'}, {text: 'No', class: 'bg-gray-500 text-white', action: 'cancel'}])
+            .then(result => { if(result.action === 'confirm') { state.inventory.undoStack.push(JSON.parse(JSON.stringify(state.inventory.billData))); state.inventory.redoStack = []; state.inventory.billData = []; lastItem = ''; lastRate = ''; renderBillTable(); updateQuantitySummary(); saveState(); }});
+        }
+
+        function renderBillTable() {
+            const tbody = document.querySelector("#billTable tbody");
+            tbody.innerHTML = state.inventory.billData.map((d, i) => `
+                <tr class="bg-white border-b">
+                    <td class="px-4 py-2">${d.supplier}<br><span class="text-xs text-gray-500">${d.billno} - ${convertToDDMMYYYY(d.billdate)}</span></td>
+                    <td class="px-4 py-2">${d.item}</td>
+                    <td class="px-4 py-2">${d.sizeColourDisplay}</td>
+                    <td class="px-4 py-2 qty-input">${d.qty}</td>
+                    <td class="px-4 py-2">₹${d.rate}</td>
+                    <td class="px-4 py-2">₹${d.mrp}</td>
+                    <td class="px-4 py-2 text-center space-x-2">
+                        <button class="text-blue-500 hover:text-blue-700" onclick="editRowInventory(${i})">✏️</button>
+                        <button class="text-red-500 hover:text-red-700" onclick="deleteRow(${i})">🗑️</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        function updateQuantitySummary() {
+            const summary = {};
+            let grandTotalQty = 0, grandTotalValue = 0;
+            state.inventory.billData.forEach(d => { 
+                summary[d.item] = summary[d.item] || { qty: 0, totalValue: 0 };
+                summary[d.item].qty += d.qty;
+                summary[d.item].totalValue += d.qty * d.rate;
+                grandTotalQty += d.qty;
+                grandTotalValue += d.qty * d.rate;
+            });
+            const summaryList = document.getElementById("summaryList");
+            summaryList.innerHTML = Object.keys(summary).sort().map(item => `<li class="flex justify-between items-center p-2 rounded bg-gray-100"><span>${item}</span><div class="text-right"><strong class="font-semibold">${summary[item].qty} pcs</strong><span class="text-xs text-gray-500 block">₹${summary[item].totalValue.toFixed(2)}</span></div></li>`).join('');
+            if(Object.keys(summary).length > 0) {
+                summaryList.innerHTML += `<li class="flex justify-between items-center p-2 rounded bg-gray-200 mt-2 font-bold"><span>Grand Total:</span><div class="text-right"><strong class="font-semibold">${grandTotalQty} pcs</strong><span class="text-xs block">₹${grandTotalValue.toFixed(2)}</span></div></li>`;
+            } else {
+                summaryList.innerHTML = `<li class="text-center text-gray-500">No items yet.</li>`;
+            }
+        }
+
+        window.filterTable = function() {
+            const filter = document.getElementById('searchInput').value.toUpperCase();
+            document.querySelectorAll('#billTable tbody tr').forEach(row => { row.style.display = row.textContent.toUpperCase().includes(filter) ? '' : 'none'; });
+        }
+
+        window.handleFormInputKeydown = async function(event, fieldId) {
+            if (event.key !== 'Enter') return;
+            event.preventDefault();
+            const order = currentSizeMode === 'manual' ? ['itemname', 'rate', 'size', 'colour'] : ['itemname', 'rate', 'colourCheckboxMode'];
+            const currentIndex = order.indexOf(fieldId);
+            if (currentIndex > -1 && currentIndex < order.length - 1) {
+                document.getElementById(order[currentIndex + 1]).focus();
+            } else {
+                await addSizes();
+            }
+        }
+
+        window.editRowInventory = async function(index) {
+            const item = state.inventory.billData[index];
+            const [size, colour] = item.sizeColourDisplay.split('     ');
+            const modalHtml = `<h3 class="text-lg font-bold mb-4">Edit Item</h3><div class="grid grid-cols-2 gap-4 text-sm"><div><label class="block font-medium">Supplier</label><input id="editSupplier" class="w-full p-2 border rounded mt-1" value="${item.supplier}"></div><div><label class="block font-medium">Bill No</label><input id="editBillNo" class="w-full p-2 border rounded mt-1" value="${item.billno}"></div><div><label class="block font-medium">Item Name</label><input id="editItem" class="w-full p-2 border rounded mt-1" value="${item.item}"></div><div><label class="block font-medium">Rate</label><input id="editRate" type="number" class="w-full p-2 border rounded mt-1" value="${item.rate}"></div><div><label class="block font-medium">Size</label><input id="editSize" class="w-full p-2 border rounded mt-1" value="${size.trim()}"></div><div><label class="block font-medium">Colour</label><input id="editColour" class="w-full p-2 border rounded mt-1" value="${(colour || '').trim()}"></div><div><label class="block font-medium">Quantity</label><input id="editQty" type="number" class="w-full p-2 border rounded mt-1" value="${item.qty}"></div><div><label class="block font-medium">Bill Date</label><input id="editBillDate" type="text" class="w-full p-2 border rounded mt-1" value="${convertToDDMMYYYY(item.billdate)}"></div></div>`;
+            const result = await showMessageBoxInventory(modalHtml, [{ text: 'Save', class: 'bg-green-600 text-white', action: 'save' }, { text: 'Cancel', class: 'bg-gray-500 text-white', action: 'cancel' }]);
+            if (result.action === 'save') {
+                state.inventory.undoStack.push(JSON.parse(JSON.stringify(state.inventory.billData)));
+                state.inventory.redoStack = [];
+                const newRate = parseFloat(document.getElementById('editRate').value);
+                const editedColour = document.getElementById('editColour').value.trim().toUpperCase();
+                state.inventory.billData[index] = { ...item,
+                    supplier: document.getElementById('editSupplier').value.trim().toUpperCase(),
+                    billno: document.getElementById('editBillNo').value.trim().toUpperCase(),
+                    item: document.getElementById('editItem').value.trim().toUpperCase(),
+                    rate: newRate,
+                    sizeColourDisplay: `${document.getElementById('editSize').value.trim().toUpperCase()}${editedColour ? '     ' + editedColour : ''}`,
+                    qty: parseInt(document.getElementById('editQty').value),
+                    mrp: calculateRoundedMRP(newRate * (1 + parseFloat(document.getElementById("marginPercentage").value) / 100)),
+                    billdate: convertToYYYYMMDD(document.getElementById('editBillDate').value)
+                };
+                renderBillTable(); updateQuantitySummary(); saveState();
+            }
+        }
+
+        window.downloadExcel = function() {
+            const data = state.inventory.billData.map(d => ({ Supplier: d.supplier, 'Bill No': d.billno, 'Bill Date': convertToDDMMYYYY(d.billdate), Item: d.item, 'Size / Colour': d.sizeColourDisplay, Qty: d.qty, Rate: d.rate, MRP: d.mrp, HSN: d.hsn, 'CGST (%)': d.cgst, 'SGST (%)': d.sgst }));
+            const ws = XLSX.utils.json_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, "Bill");
+            XLSX.writeFile(wb, `bill-${document.getElementById('supplier').value || 'data'}.xlsx`);
+        }
+
+        window.exportPDF = function() {
+            const { jsPDF } = window.jspdf; const doc = new jsPDF();
+            doc.autoTable({
+                head: [['Supplier', 'Bill No', 'Bill Date', 'Item', 'Size/Colour', 'Qty', 'Rate', 'MRP']],
+                body: state.inventory.billData.map(d => [d.supplier, d.billno, convertToDDMMYYYY(d.billdate), d.item, d.sizeColourDisplay, d.qty, d.rate, d.mrp]),
+                startY: 15, theme: 'grid', headStyles: { fillColor: [22, 160, 133] }
+            });
+            doc.save(`bill-summary-${new Date().toISOString().slice(0,10)}.pdf`);
+        }
+
+        window.importExcel = function() {
+            const input = document.createElement('input'); input.type = 'file'; input.accept = '.xlsx, .xls';
+            input.onchange = e => {
+                const reader = new FileReader();
+                reader.onload = async event => {
+                    const workbook = XLSX.read(new Uint8Array(event.target.result), {type: 'array'});
+                    const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                    const importedItems = json.map(row => ({
+                        supplier: row.Supplier || '', billno: row['Bill No'] || '', billdate: convertToYYYYMMDD(row['Bill Date'] || ''),
+                        item: row.Item || '', sizeColourDisplay: row['Size / Colour'] || '', qty: row.Qty || 1,
+                        rate: row.Rate || 0, mrp: row.MRP || 0, hsn: row.HSN || '',
+                        cgst: row['CGST (%)'] || 0, sgst: row['SGST (%)'] || 0
+                    })).filter(d => d.item && d.rate);
+                    if (importedItems.length > 0) {
+                        const { newAdditions, newUpdates } = await processDuplicates(importedItems);
+                        state.inventory.itemsToConfirm.push(...newAdditions);
+                        state.inventory.updatesToConfirm.push(...newUpdates);
+                        if (state.inventory.itemsToConfirm.length > 0 || state.inventory.updatesToConfirm.length > 0) previewAndConfirmAdd();
+                    }
+                };
+                reader.readAsArrayBuffer(e.target.files[0]);
+            };
+            input.click();
+        }
+
+        // --- INITIALIZATION ---
+        loadState();
+        renderAll();
+        document.getElementById("billdate").value = convertToDDMMYYYY(new Date().toISOString().slice(0, 10));
+        document.getElementById('marginPercentage').value = localStorage.getItem("marginPercentage") || 60;
+        document.getElementById('hsn').value = localStorage.getItem("storedHSN") || '';
+        const saved = JSON.parse(localStorage.getItem("savedFormData") || "{}");
+        for (const key in saved) {
+            if (document.getElementById(key)) {
+                document.getElementById(key).value = key === 'billdate' ? convertToDDMMYYYY(saved[key]) : saved[key];
+            }
+        }
+        document.addEventListener('change', function(event) {
+            if (event.target.classList.contains('size-checkbox')) {
+                const checkbox = event.target;
+                const controls = checkbox.closest('.flex.items-center.justify-between').querySelector('.qty-controls');
+                if (controls) {
+                    const isChecked = checkbox.checked;
+                    controls.querySelectorAll('input, button').forEach(el => el.disabled = !isChecked);
+                    if (!isChecked) controls.querySelector('.qty-display').value = 1;
+                }
+            }
+        });
+
+        window.addEventListener("beforeunload", function (e) {
+            if (state.inventory.billData.length > 0) {
+                e.preventDefault();
+                e.returnValue = "You have unsaved inventory data. Are you sure you want to leave?";
+            }
+        });
+    });
+    </script>
+</body>
+</html>
