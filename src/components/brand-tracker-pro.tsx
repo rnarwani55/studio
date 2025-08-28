@@ -647,6 +647,10 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
     const salaryPerDay = monthlySalary > 0 && daysInMonth > 0 ? monthlySalary / daysInMonth : 0;
     const deduction = absencesThisMonth * salaryPerDay;
     const netSalary = monthlySalary - deduction - paymentsThisMonth;
+    
+    const absentDates = React.useMemo(() => (staffMember.absences || []).map(d => parse(d, 'yyyy-MM-dd', new Date())), [staffMember.absences]);
+    const absentModifier = { absent: absentDates };
+    const absentModifierStyles = { absent: { color: 'white', backgroundColor: 'hsl(var(--destructive))' } };
 
     return (
       <Card className="bg-muted/40">
@@ -672,23 +676,41 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
            <Button onClick={() => onToggleAbsence(staffMember.id)} variant={(staffMember.absences || []).includes(selectedDate) ? "destructive" : "outline"} className="w-full mb-4">
               {(staffMember.absences || []).includes(selectedDate) ? `Present (Remove Absence for ${format(currentDate, "do MMM")})` : `Absent (Mark Absent for ${format(currentDate, "do MMM")})`}
            </Button>
-           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-center text-sm">
-              <div className="bg-background p-2 rounded-md">
-                  <p className="font-semibold">{absencesThisMonth}</p>
-                  <p className="text-muted-foreground">Absences</p>
-              </div>
-              <div className="bg-background p-2 rounded-md">
-                  <p className="font-semibold text-red-600">{deduction.toFixed(2)}</p>
-                  <p className="text-muted-foreground">Deduction</p>
-              </div>
-               <div className="bg-background p-2 rounded-md">
-                  <p className="font-semibold text-blue-600">{paymentsThisMonth.toFixed(2)}</p>
-                  <p className="text-muted-foreground">Payments</p>
-              </div>
-              <div className="bg-background p-2 rounded-md">
-                  <p className="font-bold text-green-600">{netSalary.toFixed(2)}</p>
-                  <p className="text-muted-foreground">Net Payable</p>
-              </div>
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+               <div>
+                   <div className="grid grid-cols-2 gap-2 text-center text-sm">
+                      <div className="bg-background p-2 rounded-md">
+                          <p className="font-semibold">{absencesThisMonth}</p>
+                          <p className="text-muted-foreground">Absences</p>
+                      </div>
+                      <div className="bg-background p-2 rounded-md">
+                          <p className="font-semibold text-red-600">{deduction.toFixed(2)}</p>
+                          <p className="text-muted-foreground">Deduction</p>
+                      </div>
+                       <div className="bg-background p-2 rounded-md">
+                          <p className="font-semibold text-blue-600">{paymentsThisMonth.toFixed(2)}</p>
+                          <p className="text-muted-foreground">Payments</p>
+                      </div>
+                      <div className="bg-background p-2 rounded-md">
+                          <p className="font-bold text-green-600">{netSalary.toFixed(2)}</p>
+                          <p className="text-muted-foreground">Net Payable</p>
+                      </div>
+                   </div>
+               </div>
+               <div className="flex justify-center items-center">
+                    <Calendar
+                        mode="multiple"
+                        month={currentDate}
+                        modifiers={absentModifier}
+                        modifiersStyles={absentModifierStyles}
+                        className="rounded-md border p-0"
+                        classNames={{
+                            head_cell: "w-8 h-8 font-normal text-xs",
+                            cell: "w-8 h-8 text-xs p-0",
+                            day: "w-8 h-8",
+                        }}
+                    />
+               </div>
            </div>
         </CardContent>
       </Card>
@@ -824,43 +846,55 @@ const ReportSection = ({ entries, appState }: { entries: Entry[], appState: AppS
     const { toast } = useToast();
 
     const exportFullReportPdf = () => {
-      const doc = new jsPDF();
-      const selectedDateFmt = format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP");
-      doc.setFontSize(20);
-      doc.text("MASTER OF BRANDS", 105, 15, { align: 'center' });
-      doc.setFontSize(12);
-      doc.text(`Daily Report: ${selectedDateFmt}`, 105, 22, { align: 'center' });
+        const doc = new jsPDF();
+        const selectedDateFmt = format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP");
+        doc.setFontSize(20);
+        doc.text("MASTER OF BRANDS", 105, 15, { align: 'center' });
+        doc.setFontSize(12);
+        doc.text(`Daily Report: ${selectedDateFmt}`, 105, 22, { align: 'center' });
 
-      const summaryData = [
-          ["Opening Balance", appState.openingBalance.toFixed(2)],
-          ["Cash Sales", entries.filter(e => e.type === 'Cash').reduce((sum, e) => sum + e.amount, 0).toFixed(2)],
-          ["Online Sales", entries.filter(e => e.type === 'Online').reduce((sum, e) => sum + e.amount, 0).toFixed(2)],
-          ["Udhari Paid", entries.filter(e => e.type === 'UDHARI PAID').reduce((sum, e) => sum + e.amount, 0).toFixed(2)],
-          ["Total Expenses", Math.abs(entries.filter(e => e.type === 'Expense').reduce((sum, e) => sum + e.amount, 0)).toFixed(2)],
-      ];
+        // Summary Data
+        const analyticsData = {
+            opening: appState.openingBalance,
+            cashSales: entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0),
+            onlineSales: entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0),
+            udhariPaid: entries.filter(e => e.type === 'UDHARI PAID').reduce((s, e) => s + e.amount, 0),
+            totalExpenses: Math.abs(entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0)),
+        };
 
-      autoTable(doc, {
-          startY: 30,
-          head: [['Description', 'Amount']],
-          body: summaryData,
-          theme: 'grid',
-          headStyles: { fillColor: [41, 128, 185] },
-          styles: { fontSize: 10 },
-      });
+        const totalInHand = analyticsData.opening + analyticsData.cashSales + analyticsData.udhariPaid - analyticsData.totalExpenses;
 
-      const allEntries = entries.map(e => [e.time, e.type, e.details, e.amount < 0 ? `-${Math.abs(e.amount).toFixed(2)}` : e.amount.toFixed(2)]);
+        autoTable(doc, {
+            startY: 30,
+            head: [['Description', 'Amount']],
+            body: [
+                ['Opening Balance', analyticsData.opening.toFixed(2)],
+                ['Cash Sales', analyticsData.cashSales.toFixed(2)],
+                ['Online Sales', analyticsData.onlineSales.toFixed(2)],
+                ['Udhari Paid', analyticsData.udhariPaid.toFixed(2)],
+                ['Total Expenses', `-${analyticsData.totalExpenses.toFixed(2)}`],
+                ['Closing Cash', totalInHand.toFixed(2)],
+            ],
+            theme: 'grid',
+            headStyles: { fillColor: [41, 128, 185] },
+            foot: [['Total Online', (analyticsData.onlineSales).toFixed(2)]],
+            footStyles: { fillColor: [22, 160, 133], textColor: 255 },
+            styles: { fontSize: 10 },
+        });
 
-      autoTable(doc, {
-          startY: (doc as any).lastAutoTable.finalY + 10,
-          head: [['Time', 'Type', 'Details', 'Amount']],
-          body: allEntries,
-          theme: 'striped',
-          headStyles: { fillColor: [41, 128, 185] },
-          styles: { fontSize: 9 },
-      });
-      
-      doc.save(`Full-Report-${appState.selectedDate}.pdf`);
-      toast({ title: "PDF Exported", description: "Full report has been downloaded." });
+        const allEntries = entries.map(e => [e.time, e.type, e.details, e.amount < 0 ? `-${Math.abs(e.amount).toFixed(2)}` : e.amount.toFixed(2)]);
+
+        autoTable(doc, {
+            startY: (doc as any).lastAutoTable.finalY + 10,
+            head: [['Time', 'Type', 'Details', 'Amount']],
+            body: allEntries,
+            theme: 'striped',
+            headStyles: { fillColor: [41, 128, 185] },
+            styles: { fontSize: 9 },
+        });
+        
+        doc.save(`Full-Report-${appState.selectedDate}.pdf`);
+        toast({ title: "PDF Exported", description: "Full report has been downloaded." });
     }
     
     const chartData = React.useMemo(() => {
@@ -936,3 +970,5 @@ const TransactionList = ({ title, entries, color }: { title: string, entries: En
         </div>
     </div>
 );
+
+    
