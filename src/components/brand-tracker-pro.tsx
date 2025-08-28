@@ -175,7 +175,7 @@ export default function BrandTrackerPro() {
         };
         return { ...prev, entries: [...prev.entries, newEntry] };
     });
-    toast({ title: "Entry Added", description: `${type} entry of ₹${Math.abs(amount)} has been added.` });
+    toast({ title: "Entry Added", description: `${type} entry of ${Math.abs(amount)} has been added.` });
   };
   
   const handleDateChange = (date?: Date) => {
@@ -314,7 +314,7 @@ const AnalyticsCards = ({ data }: { data: any }) => {
                             <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">{card.title}</p>
                         </div>
                         <CardTitle className={cn("text-xl font-bold", card.color)}>
-                            ₹{card.value.toFixed(2)}
+                            {card.value.toFixed(2)}
                         </CardTitle>
                     </CardHeader>
                 </Card>
@@ -483,13 +483,13 @@ const CalculatorTab = () => {
                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                     {denominations.map(denom => (
                         <div key={denom}>
-                            <Label>₹{denom} x</Label>
+                            <Label>{denom} x</Label>
                             <Input type="number" min="0" value={counts[denom] || ''} onChange={e => handleCountChange(denom, e.target.value)} />
                         </div>
                     ))}
                 </div>
                 <div className="mt-3 font-bold text-right text-2xl">
-                    Total: ₹{total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    Total: {total.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                 </div>
             </CardContent>
         </Card>
@@ -563,7 +563,7 @@ const TransactionList = ({ title, entries, color }: { title: string, entries: En
                                 <div className="text-xs text-muted-foreground">{entry.time}</div>
                             </TableCell>
                             <TableCell className={cn("text-right font-medium", entry.amount < 0 && "text-destructive")}>
-                                ₹{entry.amount.toFixed(2)}
+                                {entry.amount.toFixed(2)}
                             </TableCell>
                             <TableCell className="text-right">
                                 <Button variant="ghost" size="icon" className="h-6 w-6"><span className="text-xs">✏️</span></Button>
