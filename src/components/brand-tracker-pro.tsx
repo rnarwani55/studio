@@ -637,14 +637,16 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
     const currentDate = parse(selectedDate, 'yyyy-MM-dd', new Date());
     const monthStart = startOfMonth(currentDate);
     const monthEnd = endOfMonth(currentDate);
+    
+    const monthlySalary = staffMember.monthlySalary || 0;
 
-    const absencesThisMonth = staffMember.absences.filter(d => isSameMonth(parse(d, 'yyyy-MM-dd', new Date()), currentDate)).length;
-    const paymentsThisMonth = staffMember.payments.filter(p => isSameMonth(parse(p.date, 'yyyy-MM-dd', new Date()), currentDate)).reduce((sum, p) => sum + p.amount, 0);
+    const absencesThisMonth = (staffMember.absences || []).filter(d => isSameMonth(parse(d, 'yyyy-MM-dd', new Date()), currentDate)).length;
+    const paymentsThisMonth = (staffMember.payments || []).filter(p => isSameMonth(parse(p.date, 'yyyy-MM-dd', new Date()), currentDate)).reduce((sum, p) => sum + p.amount, 0);
 
     const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd }).length;
-    const salaryPerDay = staffMember.monthlySalary / daysInMonth;
+    const salaryPerDay = monthlySalary > 0 && daysInMonth > 0 ? monthlySalary / daysInMonth : 0;
     const deduction = absencesThisMonth * salaryPerDay;
-    const netSalary = staffMember.monthlySalary - deduction - paymentsThisMonth;
+    const netSalary = monthlySalary - deduction - paymentsThisMonth;
 
     return (
       <Card className="bg-muted/40">
@@ -652,7 +654,7 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
           <div className="flex justify-between items-start">
             <div>
               <CardTitle className="text-xl">{staffMember.name}</CardTitle>
-              <CardDescription>Salary: {staffMember.monthlySalary.toFixed(2)}/month</CardDescription>
+              <CardDescription>Salary: {monthlySalary.toFixed(2)}/month</CardDescription>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -667,8 +669,8 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
           </div>
         </CardHeader>
         <CardContent className="p-4 pt-0">
-           <Button onClick={() => onToggleAbsence(staffMember.id)} variant={staffMember.absences.includes(selectedDate) ? "destructive" : "outline"} className="w-full mb-4">
-              {staffMember.absences.includes(selectedDate) ? `Present (Remove Absence for ${format(currentDate, "do MMM")})` : `Absent (Mark Absent for ${format(currentDate, "do MMM")})`}
+           <Button onClick={() => onToggleAbsence(staffMember.id)} variant={(staffMember.absences || []).includes(selectedDate) ? "destructive" : "outline"} className="w-full mb-4">
+              {(staffMember.absences || []).includes(selectedDate) ? `Present (Remove Absence for ${format(currentDate, "do MMM")})` : `Absent (Mark Absent for ${format(currentDate, "do MMM")})`}
            </Button>
            <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-center text-sm">
               <div className="bg-background p-2 rounded-md">
@@ -717,7 +719,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         }
         onUpdate(prev => ({
             ...prev,
-            creditors: [...prev.creditors, { name: name.trim(), amount: numAmount }]
+            creditors: [...(prev.creditors || []), { name: name.trim(), amount: numAmount }]
         }));
         setName("");
         setAmount("");
@@ -727,12 +729,12 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     const removeCreditor = (creditorName: string) => {
         onUpdate(prev => ({
             ...prev,
-            creditors: prev.creditors.filter(c => c.name !== creditorName)
+            creditors: (prev.creditors || []).filter(c => c.name !== creditorName)
         }));
         toast({ title: "Creditor removed", variant: "destructive" });
     };
 
-    const totalCredit = React.useMemo(() => creditors.reduce((sum, c) => sum + c.amount, 0), [creditors]);
+    const totalCredit = React.useMemo(() => (creditors || []).reduce((sum, c) => sum + c.amount, 0), [creditors]);
 
     return (
         <Card>
@@ -755,7 +757,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {creditors.length > 0 ? creditors.map((c, i) => (
+                            {(creditors || []).length > 0 ? (creditors || []).map((c, i) => (
                                 <TableRow key={i}>
                                     <TableCell>{c.name}</TableCell>
                                     <TableCell className="text-right">{c.amount.toFixed(2)}</TableCell>
