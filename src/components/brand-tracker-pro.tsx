@@ -14,12 +14,14 @@ import {
   TrendingUp,
   Users,
   Wallet,
+  Trash2,
+  UserPlus
 } from "lucide-react";
 import { format, parse, isValid } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardFooter, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -202,11 +204,11 @@ export default function BrandTrackerPro() {
       case "udhari":
         return <UdhariTab onAddEntry={handleAddEntry} />;
       case "staff":
-        return <p>Staff management coming soon.</p>;
+        return <StaffTab staff={appState.staff} onUpdate={updateState} selectedDate={appState.selectedDate} />;
       case "inventory":
-        return <p>Inventory management coming soon.</p>;
+        return <InventoryTab inventory={appState.inventory} onUpdate={updateState} />;
       case "creditors":
-        return <p>Creditors report coming soon.</p>;
+        return <CreditorsTab creditors={appState.creditors} onUpdate={updateState} />;
       case "calc":
         return <CalculatorTab />;
       default:
@@ -462,6 +464,275 @@ const UdhariTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: n
         </Card>
     );
 }
+
+const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onUpdate: (updater: (prev: AppState) => AppState) => void, selectedDate: string }) => {
+    const [newStaffName, setNewStaffName] = React.useState("");
+    const { toast } = useToast();
+
+    const addStaff = () => {
+        if (!newStaffName.trim()) {
+            toast({ title: "Staff name cannot be empty", variant: "destructive" });
+            return;
+        }
+        onUpdate(prev => ({
+            ...prev,
+            staff: [...prev.staff, { id: Date.now(), name: newStaffName.trim(), absences: [], payments: [] }]
+        }));
+        setNewStaffName("");
+        toast({ title: "Staff added" });
+    };
+
+    const toggleAbsence = (staffId: number) => {
+        onUpdate(prev => ({
+            ...prev,
+            staff: prev.staff.map(s => {
+                if (s.id === staffId) {
+                    const isAbsent = s.absences.includes(selectedDate);
+                    const newAbsences = isAbsent
+                        ? s.absences.filter(d => d !== selectedDate)
+                        : [...s.absences, selectedDate];
+                    return { ...s, absences: newAbsences };
+                }
+                return s;
+            })
+        }));
+    };
+
+    const removeStaff = (staffId: number) => {
+        onUpdate(prev => ({
+            ...prev,
+            staff: prev.staff.filter(s => s.id !== staffId)
+        }));
+        toast({ title: "Staff member removed", variant: "destructive" });
+    };
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Manage Staff</CardTitle>
+            </CardHeader>
+            <CardContent>
+                <div className="flex gap-2 mb-4">
+                    <Input
+                        value={newStaffName}
+                        onChange={(e) => setNewStaffName(e.target.value)}
+                        placeholder="New Staff Member Name"
+                    />
+                    <Button onClick={addStaff}><UserPlus className="mr-2 h-4 w-4" /> Add</Button>
+                </div>
+                <Table>
+                    <TableHeader>
+                        <TableRow>
+                            <TableHead>Name</TableHead>
+                            <TableHead>Attendance ({format(parse(selectedDate, 'yyyy-MM-dd', new Date()), "do MMM")})</TableHead>
+                            <TableHead className="text-right">Actions</TableHead>
+                        </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                        {staff.map(s => (
+                            <TableRow key={s.id}>
+                                <TableCell className="font-medium">{s.name}</TableCell>
+                                <TableCell>
+                                    <Button
+                                        onClick={() => toggleAbsence(s.id)}
+                                        variant={s.absences.includes(selectedDate) ? "destructive" : "outline"}
+                                    >
+                                        {s.absences.includes(selectedDate) ? "Mark Present" : "Mark Absent"}
+                                    </Button>
+                                </TableCell>
+                                <TableCell className="text-right">
+                                    <Button variant="ghost" size="icon" onClick={() => removeStaff(s.id)}>
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </CardContent>
+        </Card>
+    )
+}
+
+const InventoryTab = ({ inventory, onUpdate }: { inventory: AppState['inventory'], onUpdate: (updater: (prev: AppState) => AppState) => void }) => {
+    const { toast } = useToast();
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleFileImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const json: any[] = XLSX.utils.sheet_to_json(worksheet);
+
+                const newItems: InventoryItem[] = json.map(row => ({
+                    supplier: row.Supplier,
+                    billno: String(row['Bill No.']),
+                    billdate: format(new Date((row['Bill Date'] - (25567 + 2)) * 86400 * 1000), 'yyyy-MM-dd'), // Excel date to JS date
+                    item: row.Item,
+                    sizeColourDisplay: row['Size/Colour/Display'],
+                    qty: Number(row.Qty),
+                    rate: Number(row.Rate),
+                    mrp: Number(row.MRP),
+                    hsn: String(row.HSN),
+                    cgst: Number(row.CGST),
+                    sgst: Number(row.SGST),
+                }));
+
+                onUpdate(prev => ({
+                    ...prev,
+                    inventory: { billData: [...prev.inventory.billData, ...newItems] }
+                }));
+                toast({ title: "Success", description: `${newItems.length} items imported from Excel.` });
+            } catch (error) {
+                console.error("Error importing file:", error);
+                toast({ title: "Import Error", description: "Could not read the file. Ensure it's a valid Excel file.", variant: "destructive" });
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    const handleExport = () => {
+        const worksheet = XLSX.utils.json_to_sheet(inventory.billData);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Inventory");
+        XLSX.writeFile(workbook, "InventoryExport.xlsx");
+        toast({ title: "Exported!", description: "Inventory data has been exported to Excel." });
+    };
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Inventory Management</CardTitle>
+                <CardDescription>Import from Excel or view current stock.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="flex gap-2 mb-4">
+                    <Button onClick={() => fileInputRef.current?.click()}>Import from Excel</Button>
+                    <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden" accept=".xlsx, .xls" />
+                    <Button onClick={handleExport} variant="outline">Export to Excel</Button>
+                </div>
+                <div className="max-h-96 overflow-y-auto">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Item</TableHead>
+                                <TableHead>Supplier</TableHead>
+                                <TableHead>Bill No.</TableHead>
+                                <TableHead>Qty</TableHead>
+                                <TableHead>Rate</TableHead>
+                                <TableHead>MRP</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {inventory.billData.length > 0 ? inventory.billData.map((item, index) => (
+                                <TableRow key={index}>
+                                    <TableCell>{item.item}</TableCell>
+                                    <TableCell>{item.supplier}</TableCell>
+                                    <TableCell>{item.billno}</TableCell>
+                                    <TableCell>{item.qty}</TableCell>
+                                    <TableCell>{item.rate.toFixed(2)}</TableCell>
+                                    <TableCell>{item.mrp.toFixed(2)}</TableCell>
+                                </TableRow>
+                            )) : (
+                                <TableRow>
+                                    <TableCell colSpan={6} className="text-center">No inventory data.</TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
+
+const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate: (updater: (prev: AppState) => AppState) => void }) => {
+    const [name, setName] = React.useState("");
+    const [amount, setAmount] = React.useState("");
+    const { toast } = useToast();
+
+    const addCreditor = () => {
+        const numAmount = parseFloat(amount);
+        if (!name.trim() || isNaN(numAmount) || numAmount <= 0) {
+            toast({ title: "Invalid input", description: "Please enter a valid name and positive amount.", variant: "destructive" });
+            return;
+        }
+        onUpdate(prev => ({
+            ...prev,
+            creditors: [...prev.creditors, { name: name.trim(), amount: numAmount }]
+        }));
+        setName("");
+        setAmount("");
+        toast({ title: "Creditor added" });
+    };
+
+    const removeCreditor = (creditorName: string) => {
+        onUpdate(prev => ({
+            ...prev,
+            creditors: prev.creditors.filter(c => c.name !== creditorName)
+        }));
+        toast({ title: "Creditor removed", variant: "destructive" });
+    };
+
+    const totalCredit = React.useMemo(() => creditors.reduce((sum, c) => sum + c.amount, 0), [creditors]);
+
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Creditors Report</CardTitle>
+            </CardHeader>
+            <CardContent>
+                 <div className="flex gap-2 mb-4">
+                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="Creditor Name" />
+                    <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount" />
+                    <Button onClick={addCreditor}><PlusCircle className="mr-2 h-4 w-4" /> Add</Button>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Creditor Name</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {creditors.length > 0 ? creditors.map((c, i) => (
+                                <TableRow key={i}>
+                                    <TableCell>{c.name}</TableCell>
+                                    <TableCell className="text-right">{c.amount.toFixed(2)}</TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="ghost" size="icon" onClick={() => removeCreditor(c.name)}>
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                    </TableCell>
+                                </TableRow>
+                            )) : (
+                                <TableRow>
+                                    <TableCell colSpan={3} className="text-center">No creditors found.</TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                        <TableFooter>
+                            <TableRow>
+                                <TableHead>Total</TableHead>
+                                <TableHead className="text-right">{totalCredit.toFixed(2)}</TableHead>
+                                <TableHead></TableHead>
+                            </TableRow>
+                        </TableFooter>
+                    </Table>
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
 
 
 const CalculatorTab = () => {
