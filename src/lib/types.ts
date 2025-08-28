@@ -9,6 +9,7 @@ export interface Entry {
 }
 
 export interface StaffPayment {
+    id: number;
     date: string; // YYYY-MM-DD
     amount: number;
     description: string;
@@ -17,6 +18,7 @@ export interface StaffPayment {
 export interface StaffMember {
   id: number;
   name: string;
+  monthlySalary: number;
   absences: string[]; // Array of YYYY-MM-DD dates
   payments: StaffPayment[];
 }

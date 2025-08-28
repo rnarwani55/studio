@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -15,9 +16,11 @@ import {
   Users,
   Wallet,
   Trash2,
-  UserPlus
+  UserPlus,
+  Edit,
+  MoreVertical
 } from "lucide-react";
-import { format, parse, isValid } from "date-fns";
+import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -30,12 +33,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Tabs,
   TabsContent,
@@ -59,6 +61,8 @@ import {
   DialogTitle,
   DialogFooter,
   DialogClose,
+  DialogDescription,
+  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -72,7 +76,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Bar, BarChart, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { cn } from "@/lib/utils";
-import type { Entry, StaffMember, InventoryItem, Creditor, AppState } from '@/lib/types';
+import type { Entry, StaffMember, InventoryItem, Creditor, AppState, StaffPayment } from '@/lib/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -466,20 +470,60 @@ const UdhariTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: n
 }
 
 const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onUpdate: (updater: (prev: AppState) => AppState) => void, selectedDate: string }) => {
-    const [newStaffName, setNewStaffName] = React.useState("");
     const { toast } = useToast();
+    const [isStaffModalOpen, setStaffModalOpen] = React.useState(false);
+    const [isPaymentModalOpen, setPaymentModalOpen] = React.useState(false);
+    const [editingStaff, setEditingStaff] = React.useState<StaffMember | null>(null);
+    const [payingStaff, setPayingStaff] = React.useState<StaffMember | null>(null);
 
-    const addStaff = () => {
-        if (!newStaffName.trim()) {
-            toast({ title: "Staff name cannot be empty", variant: "destructive" });
+    const handleSaveStaff = (name: string, monthlySalary: number) => {
+        if (!name.trim() || isNaN(monthlySalary) || monthlySalary <= 0) {
+            toast({ title: "Invalid Input", description: "Please enter a valid name and salary.", variant: "destructive" });
             return;
         }
+
+        onUpdate(prev => {
+            if (editingStaff) { // Editing existing staff
+                return {
+                    ...prev,
+                    staff: prev.staff.map(s => s.id === editingStaff.id ? { ...s, name, monthlySalary } : s)
+                };
+            } else { // Adding new staff
+                const newStaff: StaffMember = { id: Date.now(), name, monthlySalary, absences: [], payments: [] };
+                return { ...prev, staff: [...prev.staff, newStaff] };
+            }
+        });
+
+        toast({ title: editingStaff ? "Staff Updated" : "Staff Added" });
+        setEditingStaff(null);
+        setStaffModalOpen(false);
+    };
+
+    const handleSavePayment = (amount: number, description: string) => {
+        if (!payingStaff || isNaN(amount) || amount <= 0 || !description.trim()) {
+            toast({ title: "Invalid Input", description: "Please enter a valid amount and description.", variant: "destructive" });
+            return;
+        }
+
         onUpdate(prev => ({
             ...prev,
-            staff: [...prev.staff, { id: Date.now(), name: newStaffName.trim(), absences: [], payments: [] }]
+            staff: prev.staff.map(s => {
+                if (s.id === payingStaff.id) {
+                    const newPayment: StaffPayment = {
+                        id: Date.now(),
+                        date: format(new Date(), 'yyyy-MM-dd'),
+                        amount,
+                        description
+                    };
+                    return { ...s, payments: [...s.payments, newPayment] };
+                }
+                return s;
+            })
         }));
-        setNewStaffName("");
-        toast({ title: "Staff added" });
+
+        toast({ title: "Payment Recorded" });
+        setPayingStaff(null);
+        setPaymentModalOpen(false);
     };
 
     const toggleAbsence = (staffId: number) => {
@@ -497,60 +541,155 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
             })
         }));
     };
-
+    
     const removeStaff = (staffId: number) => {
-        onUpdate(prev => ({
-            ...prev,
-            staff: prev.staff.filter(s => s.id !== staffId)
-        }));
-        toast({ title: "Staff member removed", variant: "destructive" });
+      onUpdate(prev => ({
+        ...prev,
+        staff: prev.staff.filter(s => s.id !== staffId)
+      }));
+      toast({ title: "Staff member removed", variant: "destructive" });
+    };
+
+    const StaffModal = ({ isOpen, onOpenChange, onSave, staffMember }: { isOpen: boolean, onOpenChange: (open: boolean) => void, onSave: (name: string, salary: number) => void, staffMember: StaffMember | null }) => {
+        const [name, setName] = React.useState("");
+        const [salary, setSalary] = React.useState("");
+
+        React.useEffect(() => {
+            if (staffMember) {
+                setName(staffMember.name);
+                setSalary(staffMember.monthlySalary.toString());
+            } else {
+                setName("");
+                setSalary("");
+            }
+        }, [staffMember]);
+
+        const handleSubmit = () => {
+            onSave(name, parseFloat(salary));
+        };
+
+        return (
+            <Dialog open={isOpen} onOpenChange={onOpenChange}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>{staffMember ? "Edit Staff" : "Add New Staff"}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <Input placeholder="Staff Name" value={name} onChange={e => setName(e.target.value)} />
+                        <Input type="number" placeholder="Monthly Salary" value={salary} onChange={e => setSalary(e.target.value)} />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                        <Button onClick={handleSubmit}>Save</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        );
+    };
+    
+    const PaymentModal = ({ isOpen, onOpenChange, onSave, staffMember }: { isOpen: boolean, onOpenChange: (open: boolean) => void, onSave: (amount: number, description: string) => void, staffMember: StaffMember | null }) => {
+        const [amount, setAmount] = React.useState("");
+        const [description, setDescription] = React.useState("");
+
+        const handleSubmit = () => {
+            onSave(parseFloat(amount), description);
+        };
+
+        return (
+            <Dialog open={isOpen} onOpenChange={onOpenChange}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Add Payment for {staffMember?.name}</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                        <Input type="number" placeholder="Payment Amount" value={amount} onChange={e => setAmount(e.target.value)} />
+                        <Input placeholder="Description (e.g., Advance, Salary)" value={description} onChange={e => setDescription(e.target.value)} />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                        <Button onClick={handleSubmit}>Record Payment</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        );
     };
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Manage Staff</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="flex gap-2 mb-4">
-                    <Input
-                        value={newStaffName}
-                        onChange={(e) => setNewStaffName(e.target.value)}
-                        placeholder="New Staff Member Name"
-                    />
-                    <Button onClick={addStaff}><UserPlus className="mr-2 h-4 w-4" /> Add</Button>
+                <div className="flex justify-between items-center">
+                  <CardTitle>Staff Management</CardTitle>
+                  <Button onClick={() => { setEditingStaff(null); setStaffModalOpen(true); }}>
+                      <UserPlus className="mr-2 h-4 w-4" /> Add Staff
+                  </Button>
                 </div>
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Attendance ({format(parse(selectedDate, 'yyyy-MM-dd', new Date()), "do MMM")})</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {staff.map(s => (
-                            <TableRow key={s.id}>
-                                <TableCell className="font-medium">{s.name}</TableCell>
-                                <TableCell>
-                                    <Button
-                                        onClick={() => toggleAbsence(s.id)}
-                                        variant={s.absences.includes(selectedDate) ? "destructive" : "outline"}
-                                    >
-                                        {s.absences.includes(selectedDate) ? "Mark Present" : "Mark Absent"}
-                                    </Button>
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <Button variant="ghost" size="icon" onClick={() => removeStaff(s.id)}>
-                                        <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                </TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+            </CardHeader>
+            <CardContent className="space-y-4">
+                {staff.map(s => <StaffCard key={s.id} staffMember={s} selectedDate={selectedDate} onToggleAbsence={toggleAbsence} onEdit={() => { setEditingStaff(s); setStaffModalOpen(true); }} onRemove={() => removeStaff(s.id)} onAddPayment={() => { setPayingStaff(s); setPaymentModalOpen(true); }} />)}
             </CardContent>
+            <StaffModal isOpen={isStaffModalOpen} onOpenChange={setStaffModalOpen} onSave={handleSaveStaff} staffMember={editingStaff} />
+            <PaymentModal isOpen={isPaymentModalOpen} onOpenChange={setPaymentModalOpen} onSave={handleSavePayment} staffMember={payingStaff} />
         </Card>
+    );
+};
+
+const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number) => void, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
+    const currentDate = parse(selectedDate, 'yyyy-MM-dd', new Date());
+    const monthStart = startOfMonth(currentDate);
+    const monthEnd = endOfMonth(currentDate);
+
+    const absencesThisMonth = staffMember.absences.filter(d => isSameMonth(parse(d, 'yyyy-MM-dd', new Date()), currentDate)).length;
+    const paymentsThisMonth = staffMember.payments.filter(p => isSameMonth(parse(p.date, 'yyyy-MM-dd', new Date()), currentDate)).reduce((sum, p) => sum + p.amount, 0);
+
+    const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd }).length;
+    const salaryPerDay = staffMember.monthlySalary / daysInMonth;
+    const deduction = absencesThisMonth * salaryPerDay;
+    const netSalary = staffMember.monthlySalary - deduction - paymentsThisMonth;
+
+    return (
+      <Card className="bg-muted/40">
+        <CardHeader className="p-4">
+          <div className="flex justify-between items-start">
+            <div>
+              <CardTitle className="text-xl">{staffMember.name}</CardTitle>
+              <CardDescription>Salary: {staffMember.monthlySalary.toFixed(2)}/month</CardDescription>
+            </div>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={onAddPayment}>Add Payment</DropdownMenuItem>
+                <DropdownMenuItem onClick={onEdit}>Edit Staff</DropdownMenuItem>
+                <DropdownMenuItem onClick={onRemove} className="text-red-600">Remove Staff</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </CardHeader>
+        <CardContent className="p-4 pt-0">
+           <Button onClick={() => onToggleAbsence(staffMember.id)} variant={staffMember.absences.includes(selectedDate) ? "destructive" : "outline"} className="w-full mb-4">
+              {staffMember.absences.includes(selectedDate) ? `Present (Remove Absence for ${format(currentDate, "do MMM")})` : `Absent (Mark Absent for ${format(currentDate, "do MMM")})`}
+           </Button>
+           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-center text-sm">
+              <div className="bg-background p-2 rounded-md">
+                  <p className="font-semibold">{absencesThisMonth}</p>
+                  <p className="text-muted-foreground">Absences</p>
+              </div>
+              <div className="bg-background p-2 rounded-md">
+                  <p className="font-semibold text-red-600">{deduction.toFixed(2)}</p>
+                  <p className="text-muted-foreground">Deduction</p>
+              </div>
+               <div className="bg-background p-2 rounded-md">
+                  <p className="font-semibold text-blue-600">{paymentsThisMonth.toFixed(2)}</p>
+                  <p className="text-muted-foreground">Payments</p>
+              </div>
+              <div className="bg-background p-2 rounded-md">
+                  <p className="font-bold text-green-600">{netSalary.toFixed(2)}</p>
+                  <p className="text-muted-foreground">Net Payable</p>
+              </div>
+           </div>
+        </CardContent>
+      </Card>
     )
 }
 
@@ -684,10 +823,42 @@ const ReportSection = ({ entries, appState }: { entries: Entry[], appState: AppS
 
     const exportFullReportPdf = () => {
       const doc = new jsPDF();
-      doc.text("Full Financial Report", 14, 15);
-      //... more complex logic
-      doc.save("Full-Report.pdf");
-      toast({ title: "PDF Exported" });
+      const selectedDateFmt = format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP");
+      doc.setFontSize(20);
+      doc.text("MASTER OF BRANDS", 105, 15, { align: 'center' });
+      doc.setFontSize(12);
+      doc.text(`Daily Report: ${selectedDateFmt}`, 105, 22, { align: 'center' });
+
+      const summaryData = [
+          ["Opening Balance", appState.openingBalance.toFixed(2)],
+          ["Cash Sales", entries.filter(e => e.type === 'Cash').reduce((sum, e) => sum + e.amount, 0).toFixed(2)],
+          ["Online Sales", entries.filter(e => e.type === 'Online').reduce((sum, e) => sum + e.amount, 0).toFixed(2)],
+          ["Udhari Paid", entries.filter(e => e.type === 'UDHARI PAID').reduce((sum, e) => sum + e.amount, 0).toFixed(2)],
+          ["Total Expenses", Math.abs(entries.filter(e => e.type === 'Expense').reduce((sum, e) => sum + e.amount, 0)).toFixed(2)],
+      ];
+
+      autoTable(doc, {
+          startY: 30,
+          head: [['Description', 'Amount']],
+          body: summaryData,
+          theme: 'grid',
+          headStyles: { fillColor: [41, 128, 185] },
+          styles: { fontSize: 10 },
+      });
+
+      const allEntries = entries.map(e => [e.time, e.type, e.details, e.amount < 0 ? `-${Math.abs(e.amount).toFixed(2)}` : e.amount.toFixed(2)]);
+
+      autoTable(doc, {
+          startY: (doc as any).lastAutoTable.finalY + 10,
+          head: [['Time', 'Type', 'Details', 'Amount']],
+          body: allEntries,
+          theme: 'striped',
+          headStyles: { fillColor: [41, 128, 185] },
+          styles: { fontSize: 9 },
+      });
+      
+      doc.save(`Full-Report-${appState.selectedDate}.pdf`);
+      toast({ title: "PDF Exported", description: "Full report has been downloaded." });
     }
     
     const chartData = React.useMemo(() => {
