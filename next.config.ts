@@ -25,8 +25,10 @@ const nextConfig: NextConfig = {
     ],
   },
   experimental: {
-    allowedDevOrigins: ["https://*.cloudworkstations.dev"],
-  }
+    // allowedDevOrigins should be a top level property, not under experimental.
+    // The property has been moved out of this block.
+  },
+  allowedDevOrigins: ["https://*.cloudworkstations.dev"],
 };
 
 export default nextConfig;
