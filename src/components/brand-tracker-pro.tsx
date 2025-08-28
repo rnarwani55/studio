@@ -245,7 +245,7 @@ export default function BrandTrackerPro() {
         </div>
       </Tabs>
       
-      <ReportSection entries={appState.entries.filter(e => e.date === appState.selectedDate)} appState={appState} />
+      {activeTab !== 'inventory' && <ReportSection entries={appState.entries.filter(e => e.date === appState.selectedDate)} appState={appState} />}
     </div>
   );
 }
@@ -658,7 +658,7 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
           <div className="flex justify-between items-start">
             <div>
               <CardTitle className="text-xl">{staffMember.name}</CardTitle>
-              <CardDescription>Salary: {monthlySalary.toFixed(2)}/month</CardDescription>
+              <CardDescription>Salary: {(monthlySalary || 0).toFixed(2)}/month</CardDescription>
             </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -684,15 +684,15 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
                           <p className="text-muted-foreground">Absences</p>
                       </div>
                       <div className="bg-background p-2 rounded-md">
-                          <p className="font-semibold text-red-600">{deduction.toFixed(2)}</p>
+                          <p className="font-semibold text-red-600">{(deduction || 0).toFixed(2)}</p>
                           <p className="text-muted-foreground">Deduction</p>
                       </div>
                        <div className="bg-background p-2 rounded-md">
-                          <p className="font-semibold text-blue-600">{paymentsThisMonth.toFixed(2)}</p>
+                          <p className="font-semibold text-blue-600">{(paymentsThisMonth || 0).toFixed(2)}</p>
                           <p className="text-muted-foreground">Payments</p>
                       </div>
                       <div className="bg-background p-2 rounded-md">
-                          <p className="font-bold text-green-600">{netSalary.toFixed(2)}</p>
+                          <p className="font-bold text-green-600">{(netSalary || 0).toFixed(2)}</p>
                           <p className="text-muted-foreground">Net Payable</p>
                       </div>
                    </div>
@@ -970,5 +970,7 @@ const TransactionList = ({ title, entries, color }: { title: string, entries: En
         </div>
     </div>
 );
+
+    
 
     
