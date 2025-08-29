@@ -994,42 +994,53 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         toast({ title: "PDF Exported", description: "Full report has been downloaded." });
     }
     
-    const TransactionTable = ({ title, data, onEdit, onDelete }: { title: string, data: Entry[], onEdit: (entry: Entry) => void, onDelete: (entry: Entry) => void }) => (
-        <div>
-            <h3 className="text-lg font-semibold mb-2">{title}</h3>
-            <div className="overflow-y-auto max-h-[300px] border rounded-lg">
-                <Table>
-                    <TableHeader className="sticky top-0 bg-muted">
-                        <TableRow>
-                            <TableHead>Time</TableHead>
-                            <TableHead>Details</TableHead>
-                            <TableHead className="text-right">Amount</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {data.length > 0 ? data.map(entry => (
-                            <TableRow key={entry.id}>
-                                <TableCell className="text-xs text-muted-foreground">{entry.time}</TableCell>
-                                <TableCell>{entry.details}</TableCell>
-                                <TableCell className={cn("text-right font-medium", entry.amount < 0 && "text-destructive")}>
-                                    {entry.amount.toFixed(2)}
-                                </TableCell>
-                                <TableCell className="text-right">
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(entry)}><Edit className="h-4 w-4" /></Button>
-                                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onDelete(entry)}><Trash2 className="h-4 w-4" /></Button>
-                                </TableCell>
-                            </TableRow>
-                        )) : (
+    const TransactionTable = ({ title, data, onEdit, onDelete }: { title: string, data: Entry[], onEdit: (entry: Entry) => void, onDelete: (entry: Entry) => void }) => {
+        const total = data.reduce((sum, entry) => sum + entry.amount, 0);
+
+        return (
+            <div>
+                <h3 className="text-lg font-semibold mb-2">{title}</h3>
+                <div className="overflow-y-auto max-h-[300px] border rounded-lg">
+                    <Table>
+                        <TableHeader className="sticky top-0 bg-muted">
                             <TableRow>
-                                <TableCell colSpan={4} className="text-center text-muted-foreground py-4">No transactions.</TableCell>
+                                <TableHead>Time</TableHead>
+                                <TableHead>Details</TableHead>
+                                <TableHead className="text-right">Amount</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
-                        )}
-                    </TableBody>
-                </Table>
+                        </TableHeader>
+                        <TableBody>
+                            {data.length > 0 ? data.map(entry => (
+                                <TableRow key={entry.id}>
+                                    <TableCell className="text-xs text-muted-foreground">{entry.time}</TableCell>
+                                    <TableCell>{entry.details}</TableCell>
+                                    <TableCell className={cn("text-right font-medium", entry.amount < 0 && "text-destructive")}>
+                                        {entry.amount.toFixed(2)}
+                                    </TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onEdit(entry)}><Edit className="h-4 w-4" /></Button>
+                                        <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => onDelete(entry)}><Trash2 className="h-4 w-4" /></Button>
+                                    </TableCell>
+                                </TableRow>
+                            )) : (
+                                <TableRow>
+                                    <TableCell colSpan={4} className="text-center text-muted-foreground py-4">No transactions.</TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                        <TableFooter>
+                            <TableRow>
+                                <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
+                                <TableCell className="text-right font-bold">{total.toFixed(2)}</TableCell>
+                                <TableCell></TableCell>
+                            </TableRow>
+                        </TableFooter>
+                    </Table>
+                </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const cashInEntries = entries.filter(e => e.type === 'Cash' || (e.type === 'UDHARI PAID' && !e.details.includes('(Online)')));
     const onlineInEntries = entries.filter(e => e.type === 'Online' || (e.type === 'UDHARI PAID' && e.details.includes('(Online)')));
