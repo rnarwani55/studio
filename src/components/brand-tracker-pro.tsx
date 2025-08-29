@@ -912,17 +912,6 @@ const ReportSection = ({ entries, appState }: { entries: Entry[], appState: AppS
                 <CardTitle>Report for {format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP")}</CardTitle>
             </CardHeader>
             <CardContent>
-                <div className="my-4 p-2 bg-muted rounded-lg h-64">
-                    <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={chartData}>
-                            <XAxis dataKey="name" />
-                            <YAxis />
-                            <Tooltip />
-                            <Bar dataKey="value" />
-                        </BarChart>
-                    </ResponsiveContainer>
-                </div>
-
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 my-6">
                     <TransactionList title="Cash Transactions" entries={entries.filter(e => e.type === 'Cash' || (e.type === 'UDHARI PAID' && !e.details.includes('(Online)')))} color="text-green-700" />
                     <TransactionList title="Online Transactions" entries={entries.filter(e => e.type === 'Online' || (e.type === 'UDHARI PAID' && e.details.includes('(Online)')))} color="text-blue-700" />
@@ -975,3 +964,6 @@ const TransactionList = ({ title, entries, color }: { title: string, entries: En
 
     
 
+
+
+    
