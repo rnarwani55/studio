@@ -959,11 +959,3 @@ const TransactionList = ({ title, entries, color }: { title: string, entries: En
         </div>
     </div>
 );
-
-    
-
-    
-
-
-
-    
