@@ -557,7 +557,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
         React.useEffect(() => {
             if (staffMember) {
                 setName(staffMember.name);
-                setSalary(staffMember.monthlySalary.toString());
+                setSalary((staffMember.monthlySalary || 0).toString());
             } else {
                 setName("");
                 setSalary("");
