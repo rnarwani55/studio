@@ -103,7 +103,8 @@ export default function BrandTrackerPro() {
   const [activeTab, setActiveTab] = React.useState("sales");
   
   // Modal States
-  const [confirmationModal, setConfirmationModal] = React.useState<{isOpen: boolean; message: string; onConfirm: () => void}>({isOpen: false, message: "", onConfirm: () => {}});
+  const [editingEntry, setEditingEntry] = React.useState<Entry | null>(null);
+  const [deletingEntry, setDeletingEntry] = React.useState<Entry | null>(null);
   
   // Memoized Calculations
   const analytics = React.useMemo(() => {
@@ -184,6 +185,25 @@ export default function BrandTrackerPro() {
     toast({ title: "Entry Added", description: `${type} entry of ${Math.abs(amount)} has been added.` });
   };
   
+  const handleUpdateEntry = (updatedEntry: Entry) => {
+    updateState(prev => ({
+      ...prev,
+      entries: prev.entries.map(e => e.id === updatedEntry.id ? updatedEntry : e)
+    }));
+    toast({ title: "Entry Updated" });
+    setEditingEntry(null);
+  }
+
+  const handleDeleteEntry = (entryId: number) => {
+    updateState(prev => ({
+      ...prev,
+      entries: prev.entries.filter(e => e.id !== entryId)
+    }));
+    toast({ title: "Entry Deleted", variant: "destructive" });
+    setDeletingEntry(null);
+  }
+
+
   const handleDateChange = (date?: Date) => {
     if (date) {
         updateState(prev => ({...prev, selectedDate: format(date, 'yyyy-MM-dd')}));
@@ -245,10 +265,83 @@ export default function BrandTrackerPro() {
         </div>
       </Tabs>
       
-      {activeTab !== 'inventory' && <ReportSection entries={appState.entries.filter(e => e.date === appState.selectedDate)} appState={appState} />}
+      {activeTab !== 'inventory' && <ReportSection 
+        entries={appState.entries.filter(e => e.date === appState.selectedDate)} 
+        appState={appState}
+        onEdit={setEditingEntry}
+        onDelete={setDeletingEntry}
+      />}
+
+      {editingEntry && <EditEntryModal entry={editingEntry} onSave={handleUpdateEntry} onCancel={() => setEditingEntry(null)} />}
+      
+      <AlertDialog open={!!deletingEntry} onOpenChange={(open) => !open && setDeletingEntry(null)}>
+          <AlertDialogContent>
+              <AlertDialogHeader>
+                  <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                      This action cannot be undone. This will permanently delete the entry.
+                  </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                  <AlertDialogCancel onClick={() => setDeletingEntry(null)}>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={() => deletingEntry && handleDeleteEntry(deletingEntry.id)}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+          </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
+
+const EditEntryModal = ({ entry, onSave, onCancel }: { entry: Entry, onSave: (entry: Entry) => void, onCancel: () => void }) => {
+    const [amount, setAmount] = React.useState(Math.abs(entry.amount).toString());
+    const [details, setDetails] = React.useState(entry.details);
+    const { toast } = useToast();
+
+    const handleSubmit = () => {
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+            toast({ title: "Invalid Amount", variant: "destructive" });
+            return;
+        }
+        if (!details.trim()) {
+            toast({ title: "Details Required", variant: "destructive" });
+            return;
+        }
+        
+        const finalAmount = entry.amount < 0 ? -Math.abs(numAmount) : numAmount;
+
+        onSave({ ...entry, amount: finalAmount, details: details.trim() });
+    }
+
+    return (
+        <Dialog open={true} onOpenChange={(open) => !open && onCancel()}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Edit Entry</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-4">
+                    <p>Type: <span className="font-semibold">{entry.type}</span></p>
+                    <Input 
+                        type="number" 
+                        value={amount} 
+                        onChange={e => setAmount(e.target.value)} 
+                        placeholder="Amount"
+                    />
+                    <Input 
+                        value={details} 
+                        onChange={e => setDetails(e.target.value)} 
+                        placeholder="Details"
+                    />
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={onCancel}>Cancel</Button>
+                    <Button onClick={handleSubmit}>Save Changes</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
 
 const Header = ({ reportDate, onDateChange, openingBalance, onOpeningBalanceChange }: { reportDate: Date; onDateChange: (date?: Date) => void; openingBalance: number; onOpeningBalanceChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => {
   return (
@@ -842,7 +935,7 @@ const CalculatorTab = () => {
     );
 };
 
-const ReportSection = ({ entries, appState }: { entries: Entry[], appState: AppState }) => {
+const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry[], appState: AppState, onEdit: (entry: Entry) => void, onDelete: (entry: Entry) => void }) => {
     const { toast } = useToast();
 
     const exportFullReportPdf = () => {
@@ -913,9 +1006,9 @@ const ReportSection = ({ entries, appState }: { entries: Entry[], appState: AppS
             </CardHeader>
             <CardContent>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 my-6">
-                    <TransactionList title="Cash Transactions" entries={entries.filter(e => e.type === 'Cash' || (e.type === 'UDHARI PAID' && !e.details.includes('(Online)')))} color="text-green-700" />
-                    <TransactionList title="Online Transactions" entries={entries.filter(e => e.type === 'Online' || (e.type === 'UDHARI PAID' && e.details.includes('(Online)')))} color="text-blue-700" />
-                    <TransactionList title="Expenses & Outflows" entries={entries.filter(e => ['Expense', 'Cash Return', 'Credit Return', 'UDHAR DIYE'].includes(e.type))} color="text-red-700" />
+                    <TransactionList title="Cash Transactions" entries={entries.filter(e => e.type === 'Cash' || (e.type === 'UDHARI PAID' && !e.details.includes('(Online)')))} color="text-green-700" onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionList title="Online Transactions" entries={entries.filter(e => e.type === 'Online' || (e.type === 'UDHARI PAID' && e.details.includes('(Online)')))} color="text-blue-700" onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionList title="Expenses & Outflows" entries={entries.filter(e => ['Expense', 'Cash Return', 'Credit Return', 'UDHAR DIYE'].includes(e.type))} color="text-red-700" onEdit={onEdit} onDelete={onDelete} />
                 </div>
                 
                  <div className="flex flex-wrap gap-2 mt-3">
@@ -929,7 +1022,7 @@ const ReportSection = ({ entries, appState }: { entries: Entry[], appState: AppS
     );
 };
 
-const TransactionList = ({ title, entries, color }: { title: string, entries: Entry[], color: string }) => (
+const TransactionList = ({ title, entries, color, onEdit, onDelete }: { title: string, entries: Entry[], color: string, onEdit: (entry: Entry) => void, onDelete: (entry: Entry) => void }) => (
     <div className="bg-muted p-4 rounded-lg">
         <h3 className={cn("font-semibold text-lg mb-2", color)}>{title}</h3>
         <div className="overflow-y-auto h-96">
@@ -945,8 +1038,8 @@ const TransactionList = ({ title, entries, color }: { title: string, entries: En
                                 {entry.amount.toFixed(2)}
                             </TableCell>
                             <TableCell className="text-right">
-                                <Button variant="ghost" size="icon" className="h-6 w-6"><span className="text-xs">✏️</span></Button>
-                                <Button variant="ghost" size="icon" className="h-6 w-6"><span className="text-xs">🗑️</span></Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onEdit(entry)}><Edit className="h-4 w-4" /></Button>
+                                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onDelete(entry)}><Trash2 className="h-4 w-4" /></Button>
                             </TableCell>
                         </TableRow>
                     )) : (
