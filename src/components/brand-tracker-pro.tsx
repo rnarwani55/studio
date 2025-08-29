@@ -308,7 +308,7 @@ const EditEntryModal = ({ entry, onSave, onCancel }: { entry: Entry, onSave: (en
             return;
         }
         
-        const finalAmount = entry.amount < 0 ? -Math.abs(numAmount) : numAmount;
+        const finalAmount = ['Expense', 'Cash Return', 'Credit Return'].includes(entry.type) ? -Math.abs(numAmount) : numAmount;
 
         onSave({ ...entry, amount: finalAmount, details: details.trim() });
     }
@@ -607,7 +607,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
                         amount,
                         description
                     };
-                    return { ...s, payments: [...s.payments, newPayment] };
+                    return { ...s, payments: [...(s.payments || []), newPayment] };
                 }
                 return s;
             })
@@ -623,10 +623,10 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
             ...prev,
             staff: prev.staff.map(s => {
                 if (s.id === staffId) {
-                    const isAbsent = s.absences.includes(selectedDate);
+                    const isAbsent = (s.absences || []).includes(selectedDate);
                     const newAbsences = isAbsent
-                        ? s.absences.filter(d => d !== selectedDate)
-                        : [...s.absences, selectedDate];
+                        ? (s.absences || []).filter(d => d !== selectedDate)
+                        : [...(s.absences || []), selectedDate];
                     return { ...s, absences: newAbsences };
                 }
                 return s;
@@ -685,6 +685,8 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
 
         const handleSubmit = () => {
             onSave(parseFloat(amount), description);
+            setAmount("");
+            setDescription("");
         };
 
         return (
@@ -953,8 +955,11 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
             udhariPaid: entries.filter(e => e.type === 'UDHARI PAID').reduce((s, e) => s + e.amount, 0),
             totalExpenses: Math.abs(entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0)),
         };
+        
+        const cashReturn = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
+        const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
 
-        const totalInHand = analyticsData.opening + analyticsData.cashSales + analyticsData.udhariPaid - analyticsData.totalExpenses;
+        const totalInHand = analyticsData.opening + analyticsData.cashSales + udhariPaidCash + cashReturn + entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0);
 
         autoTable(doc, {
             startY: 30,
@@ -962,14 +967,14 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
             body: [
                 ['Opening Balance', analyticsData.opening.toFixed(2)],
                 ['Cash Sales', analyticsData.cashSales.toFixed(2)],
-                ['Online Sales', analyticsData.onlineSales.toFixed(2)],
-                ['Udhari Paid', analyticsData.udhariPaid.toFixed(2)],
+                ['Udhari Paid (Cash)', udhariPaidCash.toFixed(2)],
+                ['Cash Return', cashReturn.toFixed(2)],
                 ['Total Expenses', `-${analyticsData.totalExpenses.toFixed(2)}`],
                 ['Closing Cash', totalInHand.toFixed(2)],
             ],
             theme: 'grid',
             headStyles: { fillColor: [41, 128, 185] },
-            foot: [['Total Online', (analyticsData.onlineSales).toFixed(2)]],
+            foot: [['Total Online Sales', (analyticsData.onlineSales).toFixed(2)]],
             footStyles: { fillColor: [22, 160, 133], textColor: 255 },
             styles: { fontSize: 10 },
         });
@@ -992,8 +997,18 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Report for {format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP")}</CardTitle>
-                 <CardDescription>A complete log of all transactions for the selected day.</CardDescription>
+                <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+                    <div>
+                        <CardTitle>Report for {format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP")}</CardTitle>
+                        <CardDescription>A complete log of all transactions for the selected day.</CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                       <Button onClick={exportFullReportPdf} variant="destructive">Full Report PDF</Button>
+                       <Button onClick={() => toast({title: "Coming soon"})} className="bg-green-700 hover:bg-green-800">Cash Report PDF</Button>
+                       <Button onClick={() => toast({title: "Coming soon"})} className="bg-blue-700 hover:bg-blue-800">Online Report PDF</Button>
+                       <Button onClick={() => toast({title: "Coming soon"})} className="bg-green-700 hover:bg-green-800">Export Excel</Button>
+                   </div>
+                </div>
             </CardHeader>
             <CardContent>
                 <div className="overflow-y-auto max-h-[400px]">
@@ -1029,15 +1044,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                         </TableBody>
                     </Table>
                 </div>
-                 <div className="flex flex-wrap gap-2 mt-4 pt-4 border-t">
-                    <Button onClick={exportFullReportPdf} variant="destructive">Full Report PDF</Button>
-                    <Button onClick={() => toast({title: "Coming soon"})} className="bg-green-700 hover:bg-green-800">Cash Report PDF</Button>
-                    <Button onClick={() => toast({title: "Coming soon"})} className="bg-blue-700 hover:bg-blue-800">Online Report PDF</Button>
-                    <Button onClick={() => toast({title: "Coming soon"})} className="bg-green-700 hover:bg-green-800">Export Excel</Button>
-                </div>
             </CardContent>
         </Card>
     );
 };
-
-    
