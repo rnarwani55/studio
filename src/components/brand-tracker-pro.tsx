@@ -1174,6 +1174,8 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     const vcfInputRef = React.useRef<HTMLInputElement>(null);
     const [isDuplicateAlertOpen, setIsDuplicateAlertOpen] = React.useState(false);
     const [duplicateTransaction, setDuplicateTransaction] = React.useState<{ creditorId: number; transaction: Omit<CreditorTransaction, 'id'>; } | null>(null);
+    const [actionToConfirm, setActionToConfirm] = React.useState<(() => void) | null>(null);
+    const [deletingCreditorId, setDeletingCreditorId] = React.useState<number | null>(null);
 
     const handleSelectCreditor = (creditorId: number) => {
         const creditor = creditors.find(c => c.id === creditorId);
@@ -1220,8 +1222,20 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             creditors: prev.creditors.filter(c => c.id !== creditorId)
         }));
         toast({ title: "Creditor Removed", variant: "destructive" });
+        setDeletingCreditorId(null);
     };
 
+    const requestPassword = (action: () => void) => {
+        setActionToConfirm(() => action); // Use a function to ensure the latest action is stored
+    };
+
+    const handleConfirmAction = () => {
+        if (actionToConfirm) {
+            actionToConfirm();
+            setActionToConfirm(null);
+        }
+    };
+    
     const proceedWithAddTransaction = (creditorId: number, transaction: Omit<CreditorTransaction, 'id'>) => {
         onUpdate(prev => {
             const updatedCreditors = prev.creditors.map(c => {
@@ -1389,15 +1403,22 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         );
     }
 
-    return <CreditorListView 
-              creditors={creditors} 
-              onSelectCreditor={handleSelectCreditor} 
-              onAddCreditor={handleAddOrUpdateCreditor}
-              onRemoveCreditor={handleRemoveCreditor}
-              onImportClick={() => vcfInputRef.current?.click()}
-              vcfInputRef={vcfInputRef}
-              onVcfFileChange={handleImportVCF}
-            />;
+    return <>
+        <CreditorListView 
+            creditors={creditors} 
+            onSelectCreditor={handleSelectCreditor} 
+            onAddCreditor={handleAddOrUpdateCreditor}
+            onRemoveCreditor={(creditorId) => requestPassword(() => handleRemoveCreditor(creditorId))}
+            onImportClick={() => vcfInputRef.current?.click()}
+            vcfInputRef={vcfInputRef}
+            onVcfFileChange={handleImportVCF}
+        />
+        <PasswordPrompt
+            open={!!actionToConfirm}
+            onOpenChange={(open) => !open && setActionToConfirm(null)}
+            onConfirm={handleConfirmAction}
+        />
+    </>;
 };
 
 const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemoveCreditor, onImportClick, vcfInputRef, onVcfFileChange }: { creditors: Creditor[], onSelectCreditor: (id: number) => void, onAddCreditor: (name: string, phone: string) => void, onRemoveCreditor: (id: number) => void, onImportClick: () => void, vcfInputRef: React.RefObject<HTMLInputElement>, onVcfFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => {
@@ -1985,6 +2006,8 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
+    
 
     
 
