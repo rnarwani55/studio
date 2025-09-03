@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import * as React from "react";
@@ -1934,14 +1933,15 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const expenseAndReturnEntries = entries.filter(e => ['Expense', 'Cash Return', 'Credit Return'].includes(e.type));
 
     // Detailed summary calculation
-    const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
     const cashSales = entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0);
     const onlineSales = entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0);
+    const totalSales = cashSales + onlineSales;
     const totalExpenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0);
     const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
     const expensesAndCashReturns = entries.filter(e => e.type === 'Expense' || e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
     const todaysCashflow = cashSales + udhariPaidCash + expensesAndCashReturns;
     const closingBalance = appState.openingBalance + todaysCashflow;
+    const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
 
 
     return (
@@ -1965,7 +1965,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     <TransactionTable title="Cash In" data={cashInEntries} onEdit={onEdit} onDelete={onDelete} />
                     <TransactionTable title="Online In" data={onlineInEntries} onEdit={onEdit} onDelete={onDelete} />
                     <TransactionTable title="Udhari Given" data={udhariGivenEntries} onEdit={onEdit} onDelete={onDelete} />
-                    <TransactionTable title="Expenses & Returns" data={expenseAndReturnEntries} onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionTable title="Expenses &amp; Returns" data={expenseAndReturnEntries} onEdit={onEdit} onDelete={onDelete} />
                 </div>
             </CardContent>
             <CardFooter className="flex-col items-stretch p-4 mt-4 border-t bg-muted/40">
@@ -1977,6 +1977,10 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     {onlineSales > 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Total Online Sales</span>
                         <span className="font-semibold text-blue-600">{onlineSales.toFixed(2)}</span>
+                    </div>}
+                     {totalSales > 0 && <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Today's Sales Total</span>
+                        <span className="font-semibold text-purple-600">{totalSales.toFixed(2)}</span>
                     </div>}
                     {todaysCashflow !== 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Today's Cashflow Total</span>
@@ -2003,3 +2007,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
+    
+
+    
