@@ -189,7 +189,7 @@ export default function BrandTrackerPro() {
             details
         };
         
-        const newState = { ...prev, entries: [...prev.entries, newEntry] };
+        let newState = { ...prev, entries: [...prev.entries, newEntry] };
 
         const handleCreditorTransaction = (creditorName: string, transactionType: 'len-den' | 'jama', transactionAmount: number, description: string, phone?: string) => {
             let creditor = newState.creditors.find(c => c.name.toLowerCase() === creditorName.toLowerCase());
@@ -219,7 +219,7 @@ export default function BrandTrackerPro() {
             const match = details.match(/(.*) - Desc: (.*)/);
             const customerName = match ? match[1] : details;
             const description = match ? match[2] : 'Udhari Sale';
-            handleCreditorTransaction(customerName, 'len-den', amount, description);
+            handleCreditorTransaction(customerName, 'len-den', amount, description, extra?.phone);
         } else if (type === 'UDHARI PAID') {
             const match = details.match(/From: (.*) \((Cash|Online)\) - Desc: (.*)/);
             if (match) {
@@ -566,7 +566,7 @@ const AnalyticsCards = ({ data }: { data: any }) => {
     );
 };
 
-const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string) => void, creditors: Creditor[] }) => {
+const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, creditors: Creditor[] }) => {
     const [saleType, setSaleType] = React.useState<Entry['type']>('Online');
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
@@ -1802,12 +1802,11 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                                 </TableRow>
                             )}
                         </TableBody>
-                         {data.length > 0 && (
+                        {data.length > 0 && (
                             <TableFooter>
                                 <TableRow>
-                                    <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
+                                    <TableCell colSpan={3} className="text-right font-bold">Total</TableCell>
                                     <TableCell className="text-right font-bold">{total.toFixed(2)}</TableCell>
-                                    <TableCell></TableCell>
                                 </TableRow>
                             </TableFooter>
                         )}
@@ -1848,7 +1847,3 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
-
-    
-
-    
