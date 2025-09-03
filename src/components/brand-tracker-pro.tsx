@@ -827,6 +827,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     const [name, setName] = React.useState("");
     const [amount, setAmount] = React.useState("");
     const { toast } = useToast();
+    const nameInputRef = React.useRef<HTMLInputElement>(null);
     const amountInputRef = React.useRef<HTMLInputElement>(null);
     const addButtonRef = React.useRef<HTMLButtonElement>(null);
 
@@ -843,6 +844,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         setName("");
         setAmount("");
         toast({ title: "Creditor added" });
+        nameInputRef.current?.focus();
     };
 
     const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -876,7 +878,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             </CardHeader>
             <CardContent>
                  <div className="flex gap-2 mb-4">
-                    <Input value={name} onChange={e => setName(e.target.value)} onKeyDown={handleNameKeyDown} placeholder="Creditor Name" />
+                    <Input ref={nameInputRef} value={name} onChange={e => setName(e.target.value)} onKeyDown={handleNameKeyDown} placeholder="Creditor Name" />
                     <Input ref={amountInputRef} type="number" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={handleAmountKeyDown} placeholder="Amount" />
                     <Button ref={addButtonRef} onClick={addCreditor}><PlusCircle className="mr-2 h-4 w-4" /> Add</Button>
                 </div>
@@ -1087,5 +1089,6 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
 
 
