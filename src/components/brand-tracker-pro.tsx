@@ -23,7 +23,8 @@ import {
   Upload,
   Download,
   History,
-  ArrowLeft
+  ArrowLeft,
+  AlertCircle
 } from "lucide-react";
 import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -106,6 +107,7 @@ export default function BrandTrackerPro() {
   // Modal States
   const [editingEntry, setEditingEntry] = React.useState<Entry | null>(null);
   const [deletingEntry, setDeletingEntry] = React.useState<Entry | null>(null);
+  const [isClearDataAlertOpen, setIsClearDataAlertOpen] = React.useState(false);
   
   // Memoized Calculations
   const analytics = React.useMemo(() => {
@@ -207,23 +209,23 @@ export default function BrandTrackerPro() {
                 newState.creditors.push(newCreditor);
             }
         } else if (type === 'UDHARI PAID') {
-            // From: Customer Name (Method)
-            const match = details.match(/From: (.*) \((Cash|Online)\)/);
+            const match = details.match(/From: (.*) \((Cash|Online)\) - Desc: (.*)/);
             if (match) {
                 const customerName = match[1];
+                const paymentMethod = match[2];
+                const description = match[3];
+
                 let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
                 const transaction: CreditorTransaction = {
                     id: Date.now() + 1,
                     date: prev.selectedDate,
                     type: 'jama',
                     amount: Math.abs(amount),
-                    description: `Payment Received (${match[2]})`,
+                    description: description || `Payment Received (${paymentMethod})`,
                 };
                  if (creditor) {
                     creditor.transactions.push(transaction);
                 } else {
-                    // This case might need review, can a non-creditor pay udhari?
-                    // For now, let's create them.
                     const newCreditor: Creditor = {
                         id: Date.now() + 2,
                         name: customerName,
@@ -256,6 +258,15 @@ export default function BrandTrackerPro() {
     }));
     toast({ title: "Entry Deleted", variant: "destructive" });
     setDeletingEntry(null);
+  }
+
+  const handleClearTodaysData = () => {
+      updateState(prev => ({
+          ...prev,
+          entries: prev.entries.filter(e => e.date !== prev.selectedDate)
+      }));
+      toast({ title: "Today's Data Cleared", description: `All entries for ${format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP")} have been deleted.`, variant: "destructive" });
+      setIsClearDataAlertOpen(false);
   }
 
 
@@ -348,6 +359,7 @@ export default function BrandTrackerPro() {
         onOpeningBalanceChange={handleOpeningBalanceChange}
         onBackup={handleBackup}
         onRestore={handleRestore}
+        onClearData={() => setIsClearDataAlertOpen(true)}
       />
       <AnalyticsCards data={analytics} />
 
@@ -386,6 +398,21 @@ export default function BrandTrackerPro() {
               <AlertDialogFooter>
                   <AlertDialogCancel onClick={() => setDeletingEntry(null)}>Cancel</AlertDialogCancel>
                   <AlertDialogAction onClick={() => deletingEntry && handleDeleteEntry(deletingEntry.id)}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+          </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={isClearDataAlertOpen} onOpenChange={setIsClearDataAlertOpen}>
+          <AlertDialogContent>
+              <AlertDialogHeader>
+                  <AlertDialogTitle>Clear All Data for Today?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                      This will permanently delete all sales, expense, and udhari entries for {format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP")}. This action cannot be undone.
+                  </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClearTodaysData} className="bg-destructive hover:bg-destructive/90">Yes, Clear Data</AlertDialogAction>
               </AlertDialogFooter>
           </AlertDialogContent>
       </AlertDialog>
@@ -444,7 +471,7 @@ const EditEntryModal = ({ entry, onSave, onCancel }: { entry: Entry, onSave: (en
     );
 };
 
-const Header = ({ reportDate, onDateChange, openingBalance, onOpeningBalanceChange, onBackup, onRestore }: { reportDate: Date; onDateChange: (date?: Date) => void; openingBalance: number; onOpeningBalanceChange: (e: React.ChangeEvent<HTMLInputElement>) => void; onBackup: () => void; onRestore: (e: React.ChangeEvent<HTMLInputElement>) => void; }) => {
+const Header = ({ reportDate, onDateChange, openingBalance, onOpeningBalanceChange, onBackup, onRestore, onClearData }: { reportDate: Date; onDateChange: (date?: Date) => void; openingBalance: number; onOpeningBalanceChange: (e: React.ChangeEvent<HTMLInputElement>) => void; onBackup: () => void; onRestore: (e: React.ChangeEvent<HTMLInputElement>) => void; onClearData: () => void; }) => {
   const restoreInputRef = React.useRef<HTMLInputElement>(null);
   
   return (
@@ -489,13 +516,16 @@ const Header = ({ reportDate, onDateChange, openingBalance, onOpeningBalanceChan
                         <Label className="text-sm font-medium text-blue-100 mb-1">Opening Balance</Label>
                         <Input type="number" step="0.01" placeholder="0.00" value={openingBalance} onChange={onOpeningBalanceChange} className="bg-white/10 border-white/20 text-white placeholder:text-blue-200 focus-visible:ring-white" />
                     </div>
-                    <div className="flex gap-2 pt-5">
+                    <div className="flex flex-wrap gap-2 pt-5">
                        <input type="file" ref={restoreInputRef} onChange={onRestore} accept=".json" className="hidden" />
                        <Button variant="outline" size="sm" onClick={() => restoreInputRef.current?.click()} className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
                          <History className="mr-2 h-4 w-4" /> Restore
                        </Button>
                        <Button variant="outline" size="sm" onClick={onBackup} className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
                          <Download className="mr-2 h-4 w-4" /> Backup
+                       </Button>
+                       <Button variant="destructive" size="sm" onClick={onClearData}>
+                         <AlertCircle className="mr-2 h-4 w-4" /> Clear Today's Data
                        </Button>
                     </div>
                 </div>
@@ -640,6 +670,7 @@ const ExpensesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount:
 const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string) => void, creditors: Creditor[] }) => {
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
+    const [description, setDescription] = React.useState('');
     const [method, setMethod] = React.useState('Cash');
     const [suggestions, setSuggestions] = React.useState<Creditor[]>([]);
     const { toast } = useToast();
@@ -671,10 +702,12 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
             toast({ title: "Customer Name Required", variant: "destructive" });
             return;
         }
-        const details = `From: ${customer.trim()} (${method})`;
+        const descText = description.trim() || `Payment Received (${method})`;
+        const details = `From: ${customer.trim()} (${method}) - Desc: ${descText}`;
         onAddEntry('UDHARI PAID', numAmount, details);
         setAmount('');
         setCustomer('');
+        setDescription('');
         setSuggestions([]);
     }
 
@@ -697,6 +730,7 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
                             </div>
                         )}
                     </div>
+                     <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" />
                     <div className="flex space-x-4">
                         <Label className="flex items-center"><input type="radio" name="payment-method" value="Cash" checked={method === 'Cash'} onChange={() => setMethod('Cash')} className="mr-2" />Cash</Label>
                         <Label className="flex items-center"><input type="radio" name="payment-method" value="Online" checked={method === 'Online'} onChange={() => setMethod('Online')} className="mr-2" />Online</Label>
@@ -1355,8 +1389,9 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                          {data.length > 0 && (
                             <TableFooter>
                                 <TableRow>
-                                    <TableCell colSpan={3} className="text-right font-bold">Total</TableCell>
+                                    <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
                                     <TableCell className="text-right font-bold">{total.toFixed(2)}</TableCell>
+                                    <TableCell></TableCell>
                                 </TableRow>
                             </TableFooter>
                         )}
