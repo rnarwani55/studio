@@ -119,8 +119,8 @@ export default function BrandTrackerPro() {
     const onlineSales = todaysEntries.filter(e => e.type === 'Online').reduce((sum, e) => sum + e.amount, 0);
     const udhariPaidCash = todaysEntries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((sum, e) => sum + e.amount, 0);
     const udhariPaidOnline = todaysEntries.filter(e => e.type === 'UDHARI PAID' && e.details.includes('(Online)')).reduce((sum, e) => sum + e.amount, 0);
-    const expenses = todaysEntries.filter(e => e.type === 'Expense').reduce((sum, e) => sum + e.amount, 0);
-    const cashReturn = todaysEntries.filter(e => e.type === 'Cash Return').reduce((sum, e) => sum + e.amount, 0);
+    const expenses = todaysEntries.filter(e => e.type === 'Expense').reduce((sum_1, e) => sum_1 + e.amount, 0);
+    const cashReturn = todaysEntries.filter(e => e.type === 'Cash Return').reduce((sum_2, e) => sum_2 + e.amount, 0);
 
     const totalCashIn = cashSales + udhariPaidCash;
     const totalOnlineIn = onlineSales + udhariPaidOnline;
@@ -173,7 +173,7 @@ export default function BrandTrackerPro() {
     setAppState(updater);
   };
   
-  const handleAddEntry = (type: Entry['type'], amount: number, details: string) => {
+  const handleAddEntry = (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => {
     updateState(prev => {
         const newEntry: Entry = {
             id: Date.now(),
@@ -229,7 +229,7 @@ export default function BrandTrackerPro() {
                     const newCreditor: Creditor = {
                         id: Date.now() + 2,
                         name: customerName,
-                        phone: '',
+                        phone: extra?.phone || '',
                         transactions: [transaction]
                     };
                     newState.creditors.push(newCreditor);
@@ -604,17 +604,24 @@ const SalesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: nu
             <CardContent className="p-4">
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <h3 className="text-lg font-semibold mb-1">Add Sale or Return</h3>
-                    <div className="grid grid-cols-3 gap-2">
-                        {saleTypes.map(st => (
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                        {saleTypes.slice(0,3).map(st => (
                             <Button 
                                 key={st.type} 
                                 type="button" 
                                 variant={saleType === st.type ? "default" : "outline"}
-                                className={cn(
-                                    st.className, 
-                                    saleType === st.type && "ring-2 ring-primary",
-                                    st.type === 'Credit Return' && 'col-span-3' // Span across all 3 columns
-                                )}
+                                className={cn(st.className, saleType === st.type && "ring-2 ring-primary")}
+                                onClick={() => setSaleType(st.type)}
+                            >
+                                {st.label}
+                            </Button>
+                        ))}
+                         {saleTypes.slice(3).map(st => (
+                            <Button 
+                                key={st.type} 
+                                type="button" 
+                                variant={saleType === st.type ? "default" : "outline"}
+                                className={cn(st.className, saleType === st.type && "ring-2 ring-primary")}
                                 onClick={() => setSaleType(st.type)}
                             >
                                 {st.label}
@@ -667,17 +674,20 @@ const ExpensesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount:
     );
 }
 
-const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string) => void, creditors: Creditor[] }) => {
+const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, creditors: Creditor[] }) => {
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
+    const [phone, setPhone] = React.useState('');
     const [description, setDescription] = React.useState('');
     const [method, setMethod] = React.useState('Cash');
     const [suggestions, setSuggestions] = React.useState<Creditor[]>([]);
+    const [selectedCreditor, setSelectedCreditor] = React.useState<Creditor | null>(null);
     const { toast } = useToast();
 
     const handleCustomerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setCustomer(value);
+        setSelectedCreditor(null); // Reset selected creditor on change
         if (value) {
             const filtered = creditors.filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
             setSuggestions(filtered);
@@ -688,6 +698,8 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
 
     const handleSuggestionClick = (creditor: Creditor) => {
         setCustomer(creditor.name);
+        setPhone(creditor.phone || '');
+        setSelectedCreditor(creditor);
         setSuggestions([]);
     };
 
@@ -704,10 +716,12 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
         }
         const descText = description.trim() || `Payment Received (${method})`;
         const details = `From: ${customer.trim()} (${method}) - Desc: ${descText}`;
-        onAddEntry('UDHARI PAID', numAmount, details);
+        onAddEntry('UDHARI PAID', numAmount, details, { phone: phone.trim() });
         setAmount('');
         setCustomer('');
+        setPhone('');
         setDescription('');
+        setSelectedCreditor(null);
         setSuggestions([]);
     }
 
@@ -730,7 +744,14 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
                             </div>
                         )}
                     </div>
-                     <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" />
+                    <Input 
+                        value={phone} 
+                        onChange={e => setPhone(e.target.value)} 
+                        placeholder="Mobile Number (Optional)" 
+                        disabled={!!selectedCreditor} 
+                        autoComplete="off" 
+                    />
+                    <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" />
                     <div className="flex space-x-4">
                         <Label className="flex items-center"><input type="radio" name="payment-method" value="Cash" checked={method === 'Cash'} onChange={() => setMethod('Cash')} className="mr-2" />Cash</Label>
                         <Label className="flex items-center"><input type="radio" name="payment-method" value="Online" checked={method === 'Online'} onChange={() => setMethod('Online')} className="mr-2" />Online</Label>
@@ -1310,13 +1331,13 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
             cashSales: entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0),
             onlineSales: entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0),
             udhariPaid: entries.filter(e => e.type === 'UDHARI PAID').reduce((s, e) => s + e.amount, 0),
-            totalExpenses: Math.abs(entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0)),
+            totalExpenses: Math.abs(entries.filter(e => e.type === 'Expense').reduce((s_1, e) => s_1 + e.amount, 0)),
         };
         
-        const cashReturn = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
-        const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
+        const cashReturn = entries.filter(e => e.type === 'Cash Return').reduce((s_2, e) => s_2 + e.amount, 0);
+        const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s_3, e) => s_3 + e.amount, 0);
 
-        const totalInHand = analyticsData.opening + analyticsData.cashSales + udhariPaidCash + cashReturn + entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0);
+        const totalInHand = analyticsData.opening + analyticsData.cashSales + udhariPaidCash + cashReturn + entries.filter(e => e.type === 'Expense').reduce((s_4, e) => s_4 + e.amount, 0);
 
         autoTable(doc, {
             startY: 30,
@@ -1432,3 +1453,4 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
