@@ -566,7 +566,7 @@ const SalesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: nu
         { label: "Online", type: "Online" },
         { label: "Udhari", type: "UDHAR DIYE" },
         { label: "Cash Return", type: "Cash Return", className: "bg-orange-200 text-orange-700 hover:bg-orange-300" },
-        { label: "Udhari Return", type: "Credit Return", className: "col-span-2 bg-red-100 text-red-700 border-red-200 hover:bg-red-200" },
+        { label: "Udhari Return", type: "Credit Return", className: "bg-red-100 text-red-700 border-red-200 hover:bg-red-200" },
     ];
 
     return (
@@ -574,13 +574,17 @@ const SalesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: nu
             <CardContent className="p-4">
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <h3 className="text-lg font-semibold mb-1">Add Sale or Return</h3>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                         {saleTypes.map(st => (
                             <Button 
                                 key={st.type} 
                                 type="button" 
                                 variant={saleType === st.type ? "default" : "outline"}
-                                className={cn(st.className, saleType === st.type && "ring-2 ring-primary")}
+                                className={cn(
+                                    st.className, 
+                                    saleType === st.type && "ring-2 ring-primary",
+                                    st.type === 'Credit Return' && 'col-span-3' // Span across all 3 columns
+                                )}
                                 onClick={() => setSaleType(st.type)}
                             >
                                 {st.label}
@@ -1351,8 +1355,8 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                          {data.length > 0 && (
                             <TableFooter>
                                 <TableRow>
-                                    <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
-                                    <TableCell colSpan={2} className="text-right font-bold">{total.toFixed(2)}</TableCell>
+                                    <TableCell colSpan={3} className="text-right font-bold">Total</TableCell>
+                                    <TableCell className="text-right font-bold">{total.toFixed(2)}</TableCell>
                                 </TableRow>
                             </TableFooter>
                         )}
@@ -1393,4 +1397,3 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
-
