@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import * as React from "react";
@@ -192,7 +193,7 @@ export default function BrandTrackerPro() {
             let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
             
             const transaction: CreditorTransaction = {
-                id: Date.now() + 1,
+                id: newEntry.id, // Use same ID to avoid duplicates
                 date: prev.selectedDate,
                 type: 'len-den',
                 amount: Math.abs(amount),
@@ -219,7 +220,7 @@ export default function BrandTrackerPro() {
 
                 let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
                 const transaction: CreditorTransaction = {
-                    id: Date.now() + 1,
+                    id: newEntry.id, // Use same ID to avoid duplicates
                     date: prev.selectedDate,
                     type: 'jama',
                     amount: Math.abs(amount),
@@ -228,6 +229,8 @@ export default function BrandTrackerPro() {
                  if (creditor) {
                     creditor.transactions.push(transaction);
                 } else {
+                     // This case should ideally be handled by ensuring customer exists.
+                    // For now, create a new one.
                     const newCreditor: Creditor = {
                         id: Date.now() + 2,
                         name: customerName,
@@ -629,17 +632,33 @@ const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'],
         { label: "Cash", type: "Cash" },
         { label: "Online", type: "Online" },
         { label: "Udhari", type: "UDHAR DIYE" },
-        { label: "Cash Return", type: "Cash Return", className: "bg-orange-200 text-orange-700 hover:bg-orange-300" },
-        { label: "Udhari Return", type: "Credit Return", className: "bg-red-100 text-red-700 border-red-200 hover:bg-red-200" },
     ];
+    const returnTypes: { label: string, type: Entry['type'], className?: string }[] = [
+      { label: "Cash Return", type: "Cash Return", className: "bg-orange-200 text-orange-700 hover:bg-orange-300" },
+      { label: "Udhari Return", type: "Credit Return", className: "bg-red-100 text-red-700 border-red-200 hover:bg-red-200" },
+    ];
+
 
     return (
         <Card>
             <CardContent className="p-4">
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <h3 className="text-lg font-semibold mb-1">Add Sale or Return</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                         {saleTypes.map(st => (
+                            <Button 
+                                key={st.type} 
+                                type="button" 
+                                variant={saleType === st.type ? "default" : "outline"}
+                                className={cn(st.className, saleType === st.type && "ring-2 ring-primary")}
+                                onClick={() => handleButtonClick(st.type)}
+                            >
+                                {st.label}
+                            </Button>
+                        ))}
+                    </div>
+                     <div className="grid grid-cols-2 gap-2">
+                        {returnTypes.map(st => (
                             <Button 
                                 key={st.type} 
                                 type="button" 
@@ -1502,5 +1521,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
+    
 
     
