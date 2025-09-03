@@ -842,21 +842,32 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             return;
         }
 
-        const isDuplicate = (creditors || []).some(c => c.name.toLowerCase() === name.trim().toLowerCase());
-        if (isDuplicate) {
-            toast({ title: "Duplicate Creditor", description: "A creditor with this name already exists.", variant: "destructive" });
-            return;
-        }
+        onUpdate(prev => {
+            const existingCreditorIndex = (prev.creditors || []).findIndex(c => c.name.toLowerCase() === name.trim().toLowerCase());
 
-        onUpdate(prev => ({
-            ...prev,
-            creditors: [...(prev.creditors || []), { name: name.trim(), amount: numAmount, phone: phone.trim() }]
-        }));
+            if (existingCreditorIndex !== -1) {
+                // Update existing creditor
+                const updatedCreditors = [...(prev.creditors || [])];
+                const existingCreditor = updatedCreditors[existingCreditorIndex];
+                
+                existingCreditor.amount += numAmount;
+                if (phone.trim()) {
+                    existingCreditor.phone = phone.trim();
+                }
+
+                toast({ title: "Creditor Updated", description: `${name.trim()}'s balance has been updated.` });
+                return { ...prev, creditors: updatedCreditors };
+            } else {
+                // Add new creditor
+                const newCreditor = { name: name.trim(), amount: numAmount, phone: phone.trim() };
+                toast({ title: "Creditor Added" });
+                return { ...prev, creditors: [...(prev.creditors || []), newCreditor] };
+            }
+        });
 
         setName("");
         setPhone("");
         setAmount("");
-        toast({ title: "Creditor added" });
         nameInputRef.current?.focus();
     };
 
@@ -947,7 +958,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
                     <Input ref={phoneInputRef} value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={(e) => handleKeyDown(e, amountInputRef)} placeholder="Mobile (Optional)" />
                     <Input ref={amountInputRef} type="number" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={handleAmountKeyDown} placeholder="Amount" />
                 </div>
-                 <Button ref={addButtonRef} onClick={addCreditor} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add Creditor</Button>
+                 <Button ref={addButtonRef} onClick={addCreditor} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add / Update Creditor</Button>
 
                 <div className="max-h-80 overflow-y-auto">
                     <Table>
@@ -1161,3 +1172,6 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
 
 
 
+
+
+    
