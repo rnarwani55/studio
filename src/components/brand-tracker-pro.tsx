@@ -206,6 +206,33 @@ export default function BrandTrackerPro() {
                 };
                 newState.creditors.push(newCreditor);
             }
+        } else if (type === 'UDHARI PAID') {
+            // From: Customer Name (Method)
+            const match = details.match(/From: (.*) \((Cash|Online)\)/);
+            if (match) {
+                const customerName = match[1];
+                let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
+                const transaction: CreditorTransaction = {
+                    id: Date.now() + 1,
+                    date: prev.selectedDate,
+                    type: 'jama',
+                    amount: Math.abs(amount),
+                    description: `Payment Received (${match[2]})`,
+                };
+                 if (creditor) {
+                    creditor.transactions.push(transaction);
+                } else {
+                    // This case might need review, can a non-creditor pay udhari?
+                    // For now, let's create them.
+                    const newCreditor: Creditor = {
+                        id: Date.now() + 2,
+                        name: customerName,
+                        phone: '',
+                        transactions: [transaction]
+                    };
+                    newState.creditors.push(newCreditor);
+                }
+            }
         }
 
         return newState;
@@ -298,7 +325,7 @@ export default function BrandTrackerPro() {
       case "expenses":
         return <ExpensesTab onAddEntry={handleAddEntry} />;
       case "udhari":
-        return <UdhariTab onAddEntry={handleAddEntry} />;
+        return <UdhariTab onAddEntry={handleAddEntry} creditors={appState.creditors || []} />;
       case "staff":
         return <StaffTab staff={appState.staff} onUpdate={updateState} selectedDate={appState.selectedDate} />;
       case "inventory":
@@ -606,11 +633,28 @@ const ExpensesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount:
     );
 }
 
-const UdhariTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: number, details: string) => void }) => {
+const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string) => void, creditors: Creditor[] }) => {
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
     const [method, setMethod] = React.useState('Cash');
+    const [suggestions, setSuggestions] = React.useState<Creditor[]>([]);
     const { toast } = useToast();
+
+    const handleCustomerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setCustomer(value);
+        if (value) {
+            const filtered = creditors.filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
+            setSuggestions(filtered);
+        } else {
+            setSuggestions([]);
+        }
+    };
+
+    const handleSuggestionClick = (creditor: Creditor) => {
+        setCustomer(creditor.name);
+        setSuggestions([]);
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -627,6 +671,7 @@ const UdhariTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: n
         onAddEntry('UDHARI PAID', numAmount, details);
         setAmount('');
         setCustomer('');
+        setSuggestions([]);
     }
 
     return (
@@ -635,7 +680,19 @@ const UdhariTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: n
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <h3 className="text-lg font-semibold mb-1">Record Udhari Payment</h3>
                     <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} step="0.01" placeholder="Paid Amount" required />
-                    <Input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Customer Name" required />
+                    <div className="relative">
+                        <Input value={customer} onChange={handleCustomerChange} placeholder="Customer Name" required autoComplete="off" />
+                        {suggestions.length > 0 && (
+                            <div className="absolute z-10 w-full bg-background border border-border rounded-md mt-1 shadow-lg max-h-40 overflow-y-auto">
+                                {suggestions.map(creditor => (
+                                    <div key={creditor.id} onClick={() => handleSuggestionClick(creditor)} className="p-2 cursor-pointer hover:bg-muted flex justify-between items-center">
+                                        <span>{creditor.name}</span>
+                                        <span className="text-xs text-muted-foreground">Bal: {calculateBalance(creditor.transactions).toFixed(2)}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                     <div className="flex space-x-4">
                         <Label className="flex items-center"><input type="radio" name="payment-method" value="Cash" checked={method === 'Cash'} onChange={() => setMethod('Cash')} className="mr-2" />Cash</Label>
                         <Label className="flex items-center"><input type="radio" name="payment-method" value="Online" checked={method === 'Online'} onChange={() => setMethod('Online')} className="mr-2" />Online</Label>
@@ -993,12 +1050,26 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
 const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemoveCreditor }: { creditors: Creditor[], onSelectCreditor: (id: number) => void, onAddCreditor: (name: string, phone: string) => void, onRemoveCreditor: (id: number) => void }) => {
     const [name, setName] = React.useState("");
     const [phone, setPhone] = React.useState("");
+    const nameInputRef = React.useRef<HTMLInputElement>(null);
+    const phoneInputRef = React.useRef<HTMLInputElement>(null);
 
     const handleSubmit = () => {
         onAddCreditor(name, phone);
         setName("");
         setPhone("");
+        nameInputRef.current?.focus();
     };
+    
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            if (e.currentTarget === nameInputRef.current) {
+                phoneInputRef.current?.focus();
+            } else if (e.currentTarget === phoneInputRef.current) {
+                handleSubmit();
+            }
+        }
+    }
+
 
     return (
         <Card>
@@ -1008,8 +1079,8 @@ const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemove
             </CardHeader>
             <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
-                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="New Creditor Name" className="sm:col-span-2" />
-                    <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Mobile (Optional)" />
+                    <Input ref={nameInputRef} onKeyDown={handleKeyDown} value={name} onChange={e => setName(e.target.value)} placeholder="New Creditor Name" className="sm:col-span-2" />
+                    <Input ref={phoneInputRef} onKeyDown={handleKeyDown} value={phone} onChange={e => setPhone(e.target.value)} placeholder="Mobile (Optional)" />
                 </div>
                 <Button onClick={handleSubmit} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add New Creditor</Button>
 
@@ -1026,7 +1097,7 @@ const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemove
                                     <p className={cn("font-bold text-lg", balance > 0 ? 'text-red-600' : 'text-green-600')}>
                                         {balance.toFixed(2)}
                                     </p>
-                                    <p className="text-xs text-muted-foreground">{balance >= 0 ? 'Dena Hai' : 'Lena Hai'}</p>
+                                    <p className="text-xs text-muted-foreground">{balance > 0 ? 'Dena Hai' : 'Lena Hai'}</p>
                                 </div>
                                 <Button variant="ghost" size="icon" className="ml-2" onClick={(e) => { e.stopPropagation(); onRemoveCreditor(c.id); }}>
                                     <Trash2 className="h-4 w-4 text-destructive" />
@@ -1113,7 +1184,7 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction }: { creditor: 
                     <CardHeader>
                         <CardDescription>Final Balance</CardDescription>
                         <CardTitle className={cn(balance > 0 ? 'text-red-600' : 'text-green-600')}>
-                             {balance >= 0 ? `${balance.toFixed(2)} Dena Hai` : `${Math.abs(balance).toFixed(2)} Lena Hai`}
+                             {balance > 0 ? `${balance.toFixed(2)} Dena Hai` : `${Math.abs(balance).toFixed(2)} Lena Hai`}
                         </CardTitle>
                     </CardHeader>
                 </Card>
@@ -1246,16 +1317,16 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         const total = data.reduce((sum, entry) => sum + entry.amount, 0);
 
         return (
-            <div>
+            <div className="flex flex-col">
                 <h3 className="text-lg font-semibold mb-2">{title}</h3>
-                <div className="overflow-y-auto max-h-[300px] border rounded-lg">
+                <div className="overflow-y-auto max-h-[300px] border rounded-lg flex-grow">
                     <Table>
                         <TableHeader className="sticky top-0 bg-muted">
                             <TableRow>
                                 <TableHead>Time</TableHead>
                                 <TableHead>Details</TableHead>
                                 <TableHead className="text-right">Amount</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
+                                <TableHead className="w-[100px] text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -1312,11 +1383,14 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                    </div>
                 </div>
             </CardHeader>
-            <CardContent className="space-y-6">
-                <TransactionTable title="Cash In" data={cashInEntries} onEdit={onEdit} onDelete={onDelete} />
-                <TransactionTable title="Online" data={onlineInEntries} onEdit={onEdit} onDelete={onDelete} />
-                <TransactionTable title="Outflows" data={outflowEntries} onEdit={onEdit} onDelete={onDelete} />
+            <CardContent>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <TransactionTable title="Cash In" data={cashInEntries} onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionTable title="Online" data={onlineInEntries} onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionTable title="Outflows" data={outflowEntries} onEdit={onEdit} onDelete={onDelete} />
+                </div>
             </CardContent>
         </Card>
     );
 };
+
