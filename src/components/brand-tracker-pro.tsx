@@ -1992,8 +1992,11 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const totalSales = cashSales + onlineSales;
     const totalExpenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0);
     const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
-    const expensesAndCashReturns = entries.filter(e => e.type === 'Expense' || e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
-    const todaysCashflow = cashSales + udhariPaidCash + expensesAndCashReturns;
+    const cashReturns = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
+    
+    // Correct cashflow calculation
+    const todaysCashflow = cashSales + udhariPaidCash + totalExpenses + cashReturns;
+    
     const closingBalance = appState.openingBalance + todaysCashflow;
     const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
 
@@ -2061,3 +2064,4 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
