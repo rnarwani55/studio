@@ -24,7 +24,8 @@ import {
   Download,
   History,
   ArrowLeft,
-  AlertCircle
+  AlertCircle,
+  Import
 } from "lucide-react";
 import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -185,17 +186,17 @@ export default function BrandTrackerPro() {
         };
         const newState = { ...prev, entries: [...prev.entries, newEntry] };
         
-        if (type === 'UDHAR DIYE') {
+        if (type === 'UDHAR DIYE' || type === 'Credit Return') {
             const match = details.match(/(.*) - Desc: (.*)/);
             const customerName = match ? match[1] : details;
-            const description = match ? match[2] : 'Udhari Sale';
+            const description = match ? match[2] : (type === 'UDHAR DIYE' ? 'Udhari Sale' : 'Credit Return');
 
             let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
             
             const transaction: CreditorTransaction = {
                 id: newEntry.id, // Use same ID to avoid duplicates
                 date: prev.selectedDate,
-                type: 'len-den',
+                type: type === 'UDHAR DIYE' ? 'len-den' : 'jama',
                 amount: Math.abs(amount),
                 description: description
             };
@@ -888,15 +889,16 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
         setPaymentModalOpen(false);
     };
 
-    const toggleAbsence = (staffId: number) => {
+    const toggleAbsence = (staffId: number, date: Date) => {
+        const dateString = format(date, 'yyyy-MM-dd');
         onUpdate(prev => ({
             ...prev,
             staff: prev.staff.map(s => {
                 if (s.id === staffId) {
-                    const isAbsent = (s.absences || []).includes(selectedDate);
+                    const isAbsent = (s.absences || []).includes(dateString);
                     const newAbsences = isAbsent
-                        ? (s.absences || []).filter(d => d !== selectedDate)
-                        : [...(s.absences || []), selectedDate];
+                        ? (s.absences || []).filter(d => d !== dateString)
+                        : [...(s.absences || []), dateString];
                     return { ...s, absences: newAbsences };
                 }
                 return s;
@@ -997,15 +999,17 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
     );
 };
 
-const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number) => void, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
+const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number, date: Date) => void, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
     const currentDate = parse(selectedDate, 'yyyy-MM-dd', new Date());
-    const monthStart = startOfMonth(currentDate);
-    const monthEnd = endOfMonth(currentDate);
+    const [currentMonth, setCurrentMonth] = React.useState(startOfMonth(currentDate));
+
+    const monthStart = startOfMonth(currentMonth);
+    const monthEnd = endOfMonth(currentMonth);
     
     const monthlySalary = staffMember.monthlySalary || 0;
 
-    const absencesThisMonth = (staffMember.absences || []).filter(d => isSameMonth(parse(d, 'yyyy-MM-dd', new Date()), currentDate)).length;
-    const paymentsThisMonth = (staffMember.payments || []).filter(p => isSameMonth(parse(p.date, 'yyyy-MM-dd', new Date()), currentDate)).reduce((sum, p) => sum + p.amount, 0);
+    const absencesThisMonth = (staffMember.absences || []).filter(d => isSameMonth(parse(d, 'yyyy-MM-dd', new Date()), currentMonth)).length;
+    const paymentsThisMonth = (staffMember.payments || []).filter(p => isSameMonth(parse(p.date, 'yyyy-MM-dd', new Date()), currentMonth)).reduce((sum, p) => sum + p.amount, 0);
 
     const daysInMonth = eachDayOfInterval({ start: monthStart, end: monthEnd }).length;
     const salaryPerDay = monthlySalary > 0 && daysInMonth > 0 ? monthlySalary / daysInMonth : 0;
@@ -1015,6 +1019,10 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
     const absentDates = React.useMemo(() => (staffMember.absences || []).map(d => parse(d, 'yyyy-MM-dd', new Date())), [staffMember.absences]);
     const absentModifier = { absent: absentDates };
     const absentModifierStyles = { absent: { color: 'white', backgroundColor: 'hsl(var(--destructive))' } };
+
+    const handleDayClick = (day: Date) => {
+        onToggleAbsence(staffMember.id, day);
+    };
 
     return (
       <Card className="bg-muted/40">
@@ -1037,11 +1045,9 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
           </div>
         </CardHeader>
         <CardContent className="p-4 pt-0">
-           <Button onClick={() => onToggleAbsence(staffMember.id)} variant={(staffMember.absences || []).includes(selectedDate) ? "destructive" : "outline"} className="w-full mb-4">
-              {(staffMember.absences || []).includes(selectedDate) ? `Present (Remove Absence for ${format(currentDate, "do MMM")})` : `Absent (Mark Absent for ${format(currentDate, "do MMM")})`}
-           </Button>
            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                <div>
+                   <h4 className="font-semibold mb-2 text-center">Monthly Summary ({format(currentMonth, 'MMMM yyyy')})</h4>
                    <div className="grid grid-cols-2 gap-2 text-center text-sm">
                       <div className="bg-background p-2 rounded-md">
                           <p className="font-semibold">{absencesThisMonth}</p>
@@ -1061,10 +1067,14 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
                       </div>
                    </div>
                </div>
-               <div className="flex justify-center items-center">
+               <div className="flex flex-col items-center">
+                    <h4 className="font-semibold mb-2 text-center">Mark Absences</h4>
                     <Calendar
                         mode="multiple"
-                        month={currentDate}
+                        selected={absentDates}
+                        onDayClick={handleDayClick}
+                        month={currentMonth}
+                        onMonthChange={setCurrentMonth}
                         modifiers={absentModifier}
                         modifiersStyles={absentModifierStyles}
                         className="rounded-md border p-0"
@@ -1103,6 +1113,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     const [view, setView] = React.useState<'list' | 'detail'>('list');
     const [selectedCreditor, setSelectedCreditor] = React.useState<Creditor | null>(null);
     const { toast } = useToast();
+    const vcfInputRef = React.useRef<HTMLInputElement>(null);
 
     const handleSelectCreditor = (creditorId: number) => {
         const creditor = creditors.find(c => c.id === creditorId);
@@ -1132,22 +1143,15 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             };
             return { ...prev, creditors: [newCreditor, ...prev.creditors] };
         });
+        toast({ title: "Creditor Added" });
     };
 
-    const handleAddTransaction = (creditorId: number, transaction: Omit<CreditorTransaction, 'id'>) => {
+    const handleUpdateCreditorDetails = (creditorId: number, name: string, phone: string) => {
         onUpdate(prev => ({
             ...prev,
-            creditors: prev.creditors.map(c => {
-                if (c.id === creditorId) {
-                    const newTransactions = [...c.transactions, { ...transaction, id: Date.now() }];
-                    // Sort transactions by date descending
-                    newTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                    return { ...c, transactions: newTransactions };
-                }
-                return c;
-            })
+            creditors: prev.creditors.map(c => c.id === creditorId ? { ...c, name, phone } : c)
         }));
-        toast({ title: "Transaction Added" });
+        toast({ title: "Creditor Updated" });
     };
 
     const handleRemoveCreditor = (creditorId: number) => {
@@ -1158,11 +1162,128 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         toast({ title: "Creditor Removed", variant: "destructive" });
     };
 
+    const handleAddTransaction = (creditorId: number, transaction: Omit<CreditorTransaction, 'id'>) => {
+        onUpdate(prev => {
+            const updatedCreditors = prev.creditors.map(c => {
+                if (c.id === creditorId) {
+                    const newTransactions = [...c.transactions, { ...transaction, id: Date.now() }];
+                    newTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    return { ...c, transactions: newTransactions };
+                }
+                return c;
+            });
+            const updatedSelectedCreditor = updatedCreditors.find(c => c.id === creditorId);
+            if (updatedSelectedCreditor) {
+                setSelectedCreditor(updatedSelectedCreditor);
+            }
+            return { ...prev, creditors: updatedCreditors };
+        });
+        toast({ title: "Transaction Added" });
+    };
+
+    const handleUpdateTransaction = (creditorId: number, updatedTx: CreditorTransaction) => {
+         onUpdate(prev => {
+            const updatedCreditors = prev.creditors.map(c => {
+                if (c.id === creditorId) {
+                    const newTransactions = c.transactions.map(tx => tx.id === updatedTx.id ? updatedTx : tx);
+                    newTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    return { ...c, transactions: newTransactions };
+                }
+                return c;
+            });
+            const updatedSelectedCreditor = updatedCreditors.find(c => c.id === creditorId);
+            if (updatedSelectedCreditor) {
+                setSelectedCreditor(updatedSelectedCreditor);
+            }
+            return { ...prev, creditors: updatedCreditors };
+        });
+        toast({ title: "Transaction Updated" });
+    };
+
+    const handleDeleteTransaction = (creditorId: number, transactionId: number) => {
+        onUpdate(prev => {
+            const updatedCreditors = prev.creditors.map(c => {
+                if (c.id === creditorId) {
+                    const newTransactions = c.transactions.filter(tx => tx.id !== transactionId);
+                    return { ...c, transactions: newTransactions };
+                }
+                return c;
+            });
+            const updatedSelectedCreditor = updatedCreditors.find(c => c.id === creditorId);
+            if (updatedSelectedCreditor) {
+                setSelectedCreditor(updatedSelectedCreditor);
+            }
+            return { ...prev, creditors: updatedCreditors };
+        });
+        toast({ title: "Transaction Deleted", variant: 'destructive' });
+    };
+    
+    const handleImportVCF = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const text = e.target?.result as string;
+                const lines = text.split('\n');
+                const contacts: { name: string; phone: string }[] = [];
+                let currentContact: { name: string; phone: string } = { name: '', phone: '' };
+
+                lines.forEach(line => {
+                    if (line.toUpperCase().startsWith('BEGIN:VCARD')) {
+                        currentContact = { name: '', phone: '' };
+                    } else if (line.toUpperCase().startsWith('END:VCARD')) {
+                        if (currentContact.name) {
+                            contacts.push(currentContact);
+                        }
+                    } else if (line.toUpperCase().startsWith('FN:')) {
+                        currentContact.name = line.substring(3).trim();
+                    } else if (line.toUpperCase().startsWith('TEL')) {
+                        if(!currentContact.phone) { // Only take the first number
+                           currentContact.phone = line.substring(line.indexOf(':') + 1).trim();
+                        }
+                    }
+                });
+                
+                onUpdate(prev => {
+                    const existingNames = new Set(prev.creditors.map(c => c.name.toLowerCase()));
+                    const newCreditors = contacts
+                        .filter(contact => !existingNames.has(contact.name.toLowerCase()))
+                        .map(contact => ({
+                            id: Date.now() + Math.random(),
+                            name: contact.name,
+                            phone: contact.phone,
+                            transactions: []
+                        }));
+                    
+                    if (newCreditors.length === 0) {
+                        toast({ title: "No New Contacts", description: "All contacts from the file already exist." });
+                        return prev;
+                    }
+
+                    toast({ title: "Import Successful", description: `${newCreditors.length} new contacts were imported.` });
+                    return { ...prev, creditors: [...newCreditors, ...prev.creditors] };
+                });
+
+            } catch (error) {
+                toast({ title: "Import Failed", description: "The selected file is not a valid VCF file.", variant: "destructive" });
+                console.error(error);
+            }
+        };
+        reader.readAsText(file);
+        if (event.target) event.target.value = '';
+    };
+
+
     if (view === 'detail' && selectedCreditor) {
         return <CreditorDetailView 
                   creditor={selectedCreditor} 
                   onBack={() => setView('list')} 
                   onAddTransaction={handleAddTransaction}
+                  onUpdateTransaction={handleUpdateTransaction}
+                  onDeleteTransaction={handleDeleteTransaction}
+                  onUpdateCreditor={handleUpdateCreditorDetails}
                />;
     }
 
@@ -1171,10 +1292,13 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
               onSelectCreditor={handleSelectCreditor} 
               onAddCreditor={handleAddOrUpdateCreditor}
               onRemoveCreditor={handleRemoveCreditor}
+              onImportClick={() => vcfInputRef.current?.click()}
+              vcfInputRef={vcfInputRef}
+              onVcfFileChange={handleImportVCF}
             />;
 };
 
-const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemoveCreditor }: { creditors: Creditor[], onSelectCreditor: (id: number) => void, onAddCreditor: (name: string, phone: string) => void, onRemoveCreditor: (id: number) => void }) => {
+const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemoveCreditor, onImportClick, vcfInputRef, onVcfFileChange }: { creditors: Creditor[], onSelectCreditor: (id: number) => void, onAddCreditor: (name: string, phone: string) => void, onRemoveCreditor: (id: number) => void, onImportClick: () => void, vcfInputRef: React.RefObject<HTMLInputElement>, onVcfFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => {
     const [name, setName] = React.useState("");
     const [phone, setPhone] = React.useState("");
     const nameInputRef = React.useRef<HTMLInputElement>(null);
@@ -1201,8 +1325,14 @@ const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemove
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Creditors</CardTitle>
-                <CardDescription>Manage your list of creditors.</CardDescription>
+                <div className="flex justify-between items-center">
+                    <div>
+                        <CardTitle>Creditors</CardTitle>
+                        <CardDescription>Manage your list of creditors.</CardDescription>
+                    </div>
+                    <input type="file" ref={vcfInputRef} onChange={onVcfFileChange} accept=".vcf" className="hidden" />
+                    <Button onClick={onImportClick}><Import className="mr-2 h-4 w-4" /> Import Contacts</Button>
+                </div>
             </CardHeader>
             <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
@@ -1215,7 +1345,7 @@ const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemove
                     {creditors.length > 0 ? creditors.map(c => {
                         const balance = calculateBalance(c.transactions);
                         return (
-                            <Card key={c.id} className="p-3 flex justify-between items-center cursor-pointer hover:bg-muted/50" onClick={() => onSelectCreditor(c.id)}>
+                            <div key={c.id} className="p-3 flex justify-between items-center rounded-md border cursor-pointer hover:bg-muted/50" onClick={() => onSelectCreditor(c.id)}>
                                 <div>
                                     <p className="font-semibold">{c.name}</p>
                                     <p className="text-sm text-muted-foreground">{c.phone || 'No phone'}</p>
@@ -1226,10 +1356,10 @@ const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemove
                                     </p>
                                     <p className="text-xs text-muted-foreground">{balance > 0 ? 'Dena Hai' : 'Lena Hai'}</p>
                                 </div>
-                                <Button variant="ghost" size="icon" className="ml-2" onClick={(e) => { e.stopPropagation(); onRemoveCreditor(c.id); }}>
+                                <Button variant="ghost" size="icon" className="ml-2 opacity-50 hover:opacity-100" onClick={(e) => { e.stopPropagation(); onRemoveCreditor(c.id); }}>
                                     <Trash2 className="h-4 w-4 text-destructive" />
                                 </Button>
-                            </Card>
+                            </div>
                         )
                     }) : (
                         <div className="text-center text-muted-foreground py-8">No creditors found.</div>
@@ -1240,70 +1370,81 @@ const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemove
     );
 };
 
-const CreditorDetailView = ({ creditor, onBack, onAddTransaction }: { creditor: Creditor, onBack: () => void, onAddTransaction: (creditorId: number, tx: Omit<CreditorTransaction, 'id'>) => void }) => {
+const PasswordPrompt = ({ open, onOpenChange, onConfirm }: { open: boolean, onOpenChange: (open: boolean) => void, onConfirm: () => void }) => {
+    const [password, setPassword] = React.useState("");
     const { toast } = useToast();
-    const [isTxModalOpen, setTxModalOpen] = React.useState(false);
-    const balance = calculateBalance(creditor.transactions);
-    
-    const sortedTransactions = [...creditor.transactions].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-    const TransactionModal = ({ isOpen, onOpenChange }: { isOpen: boolean, onOpenChange: (open: boolean) => void }) => {
-        const [amount, setAmount] = React.useState("");
-        const [description, setDescription] = React.useState("");
-        const [type, setType] = React.useState<'jama' | 'len-den'>('jama'); // Jama = Paid, Len-den = Credit
-
-        const handleSubmit = () => {
-            const numAmount = parseFloat(amount);
-            if (isNaN(numAmount) || numAmount <= 0) {
-                toast({ title: "Invalid Amount", variant: "destructive" });
-                return;
-            }
-            if (!description.trim()) {
-                toast({ title: "Description required", variant: "destructive" });
-                return;
-            }
-
-            onAddTransaction(creditor.id, {
-                date: format(new Date(), 'yyyy-MM-dd'),
-                type,
-                amount: numAmount,
-                description: description.trim()
-            });
-            setAmount("");
-            setDescription("");
+    const handleConfirm = () => {
+        if (password === "admin") {
+            onConfirm();
+            setPassword("");
             onOpenChange(false);
-        };
-
-        return (
-            <Dialog open={isOpen} onOpenChange={onOpenChange}>
-                <DialogContent>
-                    <DialogHeader><DialogTitle>New Transaction for {creditor.name}</DialogTitle></DialogHeader>
-                    <div className="py-4 space-y-4">
-                        <div className="grid grid-cols-2 gap-2">
-                           <Button onClick={() => setType('jama')} variant={type === 'jama' ? 'default' : 'outline'} className="bg-green-600 text-white hover:bg-green-700">Jama (Payment Rcvd)</Button>
-                           <Button onClick={() => setType('len-den')} variant={type === 'len-den' ? 'default' : 'outline'} className="bg-red-600 text-white hover:bg-red-700">Len-den (Credit Given)</Button>
-                        </div>
-                        <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount" />
-                        <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" />
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-                        <Button onClick={handleSubmit}>Add Transaction</Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-        );
+        } else {
+            toast({ title: "Incorrect Password", variant: "destructive" });
+        }
     };
 
     return (
+        <Dialog open={open} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Admin Password Required</DialogTitle>
+                    <DialogDescription>
+                        Please enter the admin password to proceed with this action.
+                    </DialogDescription>
+                </DialogHeader>
+                <div className="py-4">
+                    <Input
+                        type="password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        placeholder="Password"
+                        onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
+                    />
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button onClick={handleConfirm}>Confirm</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
+
+const CreditorDetailView = ({ creditor, onBack, onAddTransaction, onUpdateTransaction, onDeleteTransaction, onUpdateCreditor }: { creditor: Creditor, onBack: () => void, onAddTransaction: (creditorId: number, tx: Omit<CreditorTransaction, 'id'>) => void, onUpdateTransaction: (creditorId: number, tx: CreditorTransaction) => void, onDeleteTransaction: (creditorId: number, txId: number) => void, onUpdateCreditor: (creditorId: number, name: string, phone: string) => void }) => {
+    const [isTxModalOpen, setTxModalOpen] = React.useState(false);
+    const [isEditCreditorModalOpen, setEditCreditorModalOpen] = React.useState(false);
+    const [editingTx, setEditingTx] = React.useState<CreditorTransaction | null>(null);
+    const [actionToConfirm, setActionToConfirm] = React.useState<(() => void) | null>(null);
+
+    const balance = calculateBalance(creditor.transactions);
+
+    const requestPassword = (action: () => void) => {
+        setActionToConfirm(() => action); // Use a function to ensure the latest action is stored
+    };
+
+    const handleConfirmAction = () => {
+        if (actionToConfirm) {
+            actionToConfirm();
+            setActionToConfirm(null);
+        }
+    };
+    
+    return (
         <Card>
             <CardHeader>
-                <div className="flex items-center gap-4">
-                    <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft /></Button>
-                    <div>
-                        <CardTitle>{creditor.name}</CardTitle>
-                        <CardDescription>{creditor.phone}</CardDescription>
+                <div className="flex justify-between items-start">
+                    <div className="flex items-center gap-4">
+                        <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft /></Button>
+                        <div>
+                            <CardTitle>{creditor.name}</CardTitle>
+                            <CardDescription>{creditor.phone || 'No phone number'}</CardDescription>
+                        </div>
                     </div>
+                    <Button variant="outline" size="sm" onClick={() => setEditCreditorModalOpen(true)}>
+                        <Edit className="mr-2 h-4 w-4" /> Edit Details
+                    </Button>
                 </div>
             </CardHeader>
             <CardContent>
@@ -1316,7 +1457,7 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction }: { creditor: 
                     </CardHeader>
                 </Card>
 
-                <Button onClick={() => setTxModalOpen(true)} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add New Transaction</Button>
+                <Button onClick={() => { setEditingTx(null); setTxModalOpen(true); }} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add New Transaction</Button>
                 
                 <h3 className="text-lg font-semibold mb-2">Transaction History</h3>
                 <div className="max-h-80 overflow-y-auto">
@@ -1327,25 +1468,173 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction }: { creditor: 
                                 <TableHead>Description</TableHead>
                                 <TableHead className="text-right">Credit (Len-den)</TableHead>
                                 <TableHead className="text-right">Payment (Jama)</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {sortedTransactions.length > 0 ? sortedTransactions.map(tx => (
+                            {creditor.transactions.length > 0 ? creditor.transactions.map(tx => (
                                 <TableRow key={tx.id}>
                                     <TableCell>{format(parse(tx.date, 'yyyy-MM-dd', new Date()), 'PP')}</TableCell>
                                     <TableCell>{tx.description}</TableCell>
                                     <TableCell className="text-right text-red-600">{tx.type === 'len-den' ? tx.amount.toFixed(2) : '-'}</TableCell>
                                     <TableCell className="text-right text-green-600">{tx.type === 'jama' ? tx.amount.toFixed(2) : '-'}</TableCell>
+                                    <TableCell className="text-right">
+                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingTx(tx); setTxModalOpen(true); }}>
+                                            <Edit className="h-4 w-4" />
+                                        </Button>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => requestPassword(() => onDeleteTransaction(creditor.id, tx.id))}>
+                                            <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                    </TableCell>
                                 </TableRow>
                             )) : (
-                                <TableRow><TableCell colSpan={4} className="text-center">No transactions yet.</TableCell></TableRow>
+                                <TableRow><TableCell colSpan={5} className="text-center">No transactions yet.</TableCell></TableRow>
                             )}
                         </TableBody>
                     </Table>
                 </div>
             </CardContent>
-            <TransactionModal isOpen={isTxModalOpen} onOpenChange={setTxModalOpen} />
+
+            <TransactionModal 
+                isOpen={isTxModalOpen} 
+                onOpenChange={setTxModalOpen} 
+                creditor={creditor}
+                transaction={editingTx}
+                onAddTransaction={onAddTransaction}
+                onUpdateTransaction={(tx) => requestPassword(() => onUpdateTransaction(creditor.id, tx))}
+            />
+            <EditCreditorModal 
+                isOpen={isEditCreditorModalOpen}
+                onOpenChange={setEditCreditorModalOpen}
+                creditor={creditor}
+                onSave={onUpdateCreditor}
+            />
+            <PasswordPrompt
+                open={!!actionToConfirm}
+                onOpenChange={(open) => !open && setActionToConfirm(null)}
+                onConfirm={handleConfirmAction}
+            />
         </Card>
+    );
+};
+
+const EditCreditorModal = ({ isOpen, onOpenChange, creditor, onSave }: { isOpen: boolean, onOpenChange: (open: boolean) => void, creditor: Creditor, onSave: (id: number, name: string, phone: string) => void }) => {
+    const [name, setName] = React.useState(creditor.name);
+    const [phone, setPhone] = React.useState(creditor.phone);
+    const { toast } = useToast();
+
+    React.useEffect(() => {
+        setName(creditor.name);
+        setPhone(creditor.phone);
+    }, [creditor]);
+
+    const handleSubmit = () => {
+        if (!name.trim()) {
+            toast({ title: "Name is required", variant: "destructive" });
+            return;
+        }
+        onSave(creditor.id, name, phone);
+        onOpenChange(false);
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader><DialogTitle>Edit Creditor Details</DialogTitle></DialogHeader>
+                <div className="py-4 space-y-4">
+                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="Creditor Name" />
+                    <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Phone Number" />
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button onClick={handleSubmit}>Save Changes</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    );
+};
+
+const TransactionModal = ({ isOpen, onOpenChange, creditor, transaction, onAddTransaction, onUpdateTransaction }: { isOpen: boolean, onOpenChange: (open: boolean) => void, creditor: Creditor, transaction: CreditorTransaction | null, onAddTransaction: (creditorId: number, tx: Omit<CreditorTransaction, 'id'>) => void, onUpdateTransaction: (tx: CreditorTransaction) => void }) => {
+    const { toast } = useToast();
+    const [amount, setAmount] = React.useState("");
+    const [description, setDescription] = React.useState("");
+    const [date, setDate] = React.useState<Date | undefined>(new Date());
+    const [type, setType] = React.useState<'jama' | 'len-den'>('jama');
+
+    React.useEffect(() => {
+        if (transaction) {
+            setAmount(transaction.amount.toString());
+            setDescription(transaction.description);
+            setDate(parse(transaction.date, 'yyyy-MM-dd', new Date()));
+            setType(transaction.type);
+        } else {
+            setAmount("");
+            setDescription("");
+            setDate(new Date());
+            setType('jama');
+        }
+    }, [transaction]);
+
+    const handleSubmit = () => {
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+            toast({ title: "Invalid Amount", variant: "destructive" });
+            return;
+        }
+        if (!description.trim()) {
+            toast({ title: "Description required", variant: "destructive" });
+            return;
+        }
+        if (!date) {
+            toast({ title: "Date required", variant: "destructive" });
+            return;
+        }
+
+        const txData = {
+            date: format(date, 'yyyy-MM-dd'),
+            type,
+            amount: numAmount,
+            description: description.trim()
+        };
+
+        if (transaction) {
+            onUpdateTransaction({ ...txData, id: transaction.id });
+        } else {
+            onAddTransaction(creditor.id, txData);
+        }
+        
+        onOpenChange(false);
+    };
+
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            <DialogContent>
+                <DialogHeader><DialogTitle>{transaction ? 'Edit' : 'New'} Transaction for {creditor.name}</DialogTitle></DialogHeader>
+                <div className="py-4 space-y-4">
+                    <div className="grid grid-cols-2 gap-2">
+                       <Button onClick={() => setType('jama')} variant={type === 'jama' ? 'default' : 'outline'} className="bg-green-600 text-white hover:bg-green-700">Jama (Payment Rcvd)</Button>
+                       <Button onClick={() => setType('len-den')} variant={type === 'len-den' ? 'default' : 'outline'} className="bg-red-600 text-white hover:bg-red-700">Len-den (Credit Given)</Button>
+                    </div>
+                    <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount" />
+                    <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" />
+                    <Popover>
+                        <PopoverTrigger asChild>
+                            <Button variant={"outline"} className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}>
+                                <CalendarIcon className="mr-2 h-4 w-4" />
+                                {date ? format(date, "PPP") : <span>Pick a date</span>}
+                            </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                            <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                        </PopoverContent>
+                    </Popover>
+                </div>
+                <DialogFooter>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                    <Button onClick={handleSubmit}>{transaction ? 'Save Changes' : 'Add Transaction'}</Button>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     );
 };
 
