@@ -961,8 +961,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
         setPaymentModalOpen(false);
     };
 
-    const toggleAbsence = (staffId: number, date: Date) => {
-        const dateString = format(date, 'yyyy-MM-dd');
+    const toggleAbsence = (staffId: number, dateString: string) => {
         onUpdate(prev => ({
             ...prev,
             staff: prev.staff.map(s => {
@@ -976,6 +975,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
                 return s;
             })
         }));
+        toast({ title: `Attendance updated for ${format(parse(dateString, 'yyyy-MM-dd', new Date()), 'PPP')}` });
     };
     
     const removeStaff = (staffId: number) => {
@@ -1071,7 +1071,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
     );
 };
 
-const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number, date: Date) => void, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
+const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number, date: string) => void, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
     const currentDate = parse(selectedDate, 'yyyy-MM-dd', new Date());
     const [currentMonth, setCurrentMonth] = React.useState(startOfMonth(currentDate));
 
@@ -1092,9 +1092,8 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
     const absentModifier = { absent: absentDates };
     const absentModifierStyles = { absent: { color: 'white', backgroundColor: 'hsl(var(--destructive))' } };
 
-    const handleDayClick = (day: Date) => {
-        onToggleAbsence(staffMember.id, day);
-    };
+    const isAbsentToday = (staffMember.absences || []).includes(selectedDate);
+
 
     return (
       <Card className="bg-muted/40">
@@ -1104,16 +1103,25 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
               <CardTitle className="text-xl">{staffMember.name}</CardTitle>
               <CardDescription>Salary: {(monthlySalary || 0).toFixed(2)}/month</CardDescription>
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={onAddPayment}>Add Payment</DropdownMenuItem>
-                <DropdownMenuItem onClick={onEdit}>Edit Staff</DropdownMenuItem>
-                <DropdownMenuItem onClick={onRemove} className="text-red-600">Remove Staff</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+             <div className="flex items-center gap-2">
+                <Button 
+                    variant={isAbsentToday ? 'destructive' : 'outline'}
+                    size="sm"
+                    onClick={() => onToggleAbsence(staffMember.id, selectedDate)}
+                >
+                    {isAbsentToday ? 'Mark as Present' : 'Mark as Absent'}
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={onAddPayment}>Add Payment</DropdownMenuItem>
+                    <DropdownMenuItem onClick={onEdit}>Edit Staff</DropdownMenuItem>
+                    <DropdownMenuItem onClick={onRemove} className="text-red-600">Remove Staff</DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="p-4 pt-0">
@@ -1140,11 +1148,10 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
                    </div>
                </div>
                <div className="flex flex-col items-center">
-                    <h4 className="font-semibold mb-2 text-center">Mark Absences</h4>
+                    <h4 className="font-semibold mb-2 text-center">Absence Calendar</h4>
                     <Calendar
                         mode="multiple"
                         selected={absentDates}
-                        onDayClick={handleDayClick}
                         month={currentMonth}
                         onMonthChange={setCurrentMonth}
                         modifiers={absentModifier}
@@ -1155,6 +1162,7 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
                             cell: "w-8 h-8 text-xs p-0",
                             day: "w-8 h-8",
                         }}
+                        disabled // Disallow direct clicks
                     />
                </div>
            </div>
@@ -1294,7 +1302,9 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         toast({ title: "Transaction Updated" });
     };
 
-    const handleDeleteTransaction = (creditorId: number, transactionId: number) => {
+    const handleDeleteTransactionFromLedger = (creditorId: number, transactionId: number) => {
+        // This function ONLY removes a transaction from the creditor's ledger.
+        // It does NOT remove the original entry from the main appState.entries.
         onUpdate(prev => {
             const updatedCreditors = prev.creditors.map(c => {
                 if (c.id === creditorId) {
@@ -1309,7 +1319,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             }
             return { ...prev, creditors: updatedCreditors };
         });
-        toast({ title: "Transaction Deleted", variant: 'destructive' });
+        toast({ title: "Ledger Transaction Deleted", variant: 'destructive', description: "The entry in the daily report remains." });
     };
     
     const handleImportVCF = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1378,7 +1388,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
                   onBack={() => setView('list')} 
                   onAddTransaction={handleAddTransaction}
                   onUpdateTransaction={handleUpdateTransaction}
-                  onDeleteTransaction={handleDeleteTransaction}
+                  onDeleteTransaction={handleDeleteTransactionFromLedger}
                   onUpdateCreditor={handleUpdateCreditorDetails}
                />
                 <AlertDialog open={isDuplicateAlertOpen} onOpenChange={setIsDuplicateAlertOpen}>
