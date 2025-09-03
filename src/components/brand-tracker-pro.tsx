@@ -20,7 +20,10 @@ import {
   UserPlus,
   Edit,
   MoreVertical,
-  Upload
+  Upload,
+  Download,
+  History,
+  ArrowLeft
 } from "lucide-react";
 import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -77,22 +80,19 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import type { Entry, StaffMember, InventoryItem, Creditor, AppState, StaffPayment } from '@/lib/types';
+import type { Entry, StaffMember, Creditor, AppState, StaffPayment, CreditorTransaction } from '@/lib/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 
 
-const LSK = "mob_data_v12";
+const LSK = "mob_data_v13";
 
 const initialAppState: AppState = {
     entries: [],
     staff: [],
     openingBalance: 0,
     selectedDate: format(new Date(), "yyyy-MM-dd"),
-    inventory: {
-        billData: [],
-    },
     creditors: [],
 };
 
@@ -181,7 +181,34 @@ export default function BrandTrackerPro() {
             amount,
             details
         };
-        return { ...prev, entries: [...prev.entries, newEntry] };
+        const newState = { ...prev, entries: [...prev.entries, newEntry] };
+        
+        if (type === 'UDHAR DIYE') {
+            const customerName = details;
+            let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
+            
+            const transaction: CreditorTransaction = {
+                id: Date.now() + 1,
+                date: prev.selectedDate,
+                type: 'len-den',
+                amount: Math.abs(amount),
+                description: 'Udhari Sale'
+            };
+
+            if (creditor) {
+                creditor.transactions.push(transaction);
+            } else {
+                const newCreditor: Creditor = {
+                    id: Date.now() + 2,
+                    name: customerName,
+                    phone: '',
+                    transactions: [transaction]
+                };
+                newState.creditors.push(newCreditor);
+            }
+        }
+
+        return newState;
     });
     toast({ title: "Entry Added", description: `${type} entry of ${Math.abs(amount)} has been added.` });
   };
@@ -215,6 +242,50 @@ export default function BrandTrackerPro() {
     const value = parseFloat(e.target.value) || 0;
     updateState(prev => ({...prev, openingBalance: value}));
   };
+  
+  const handleBackup = () => {
+    try {
+        const dataStr = JSON.stringify(appState, null, 2);
+        const dataBlob = new Blob([dataStr], { type: "application/json" });
+        const url = URL.createObjectURL(dataBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `mob-backup-${format(new Date(), 'yyyy-MM-dd')}.json`;
+        link.click();
+        URL.revokeObjectURL(url);
+        toast({ title: "Backup Successful", description: "Data has been saved to your downloads." });
+    } catch (error) {
+        toast({ title: "Backup Failed", description: "Could not create backup file.", variant: "destructive" });
+        console.error(error);
+    }
+  };
+  
+  const handleRestore = (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+          try {
+              const text = e.target?.result as string;
+              const restoredState = JSON.parse(text);
+              // Basic validation of the restored state
+              if (restoredState && restoredState.entries && restoredState.selectedDate) {
+                  setAppState(restoredState);
+                  toast({ title: "Restore Successful", description: "Application data has been restored." });
+              } else {
+                  throw new Error("Invalid backup file format.");
+              }
+          } catch (error) {
+              toast({ title: "Restore Failed", description: "The selected file is not a valid backup.", variant: "destructive" });
+              console.error(error);
+          }
+      };
+      reader.readAsText(file);
+      // Reset file input
+      if(event.target) event.target.value = '';
+  };
+
 
   if (!isMounted) {
     return null; // or a loading spinner
@@ -233,7 +304,7 @@ export default function BrandTrackerPro() {
       case "inventory":
         return <InventoryTab />;
       case "creditors":
-        return <CreditorsTab creditors={appState.creditors} onUpdate={updateState} />;
+        return <CreditorsTab creditors={appState.creditors || []} onUpdate={updateState} />;
       case "calc":
         return <CalculatorTab />;
       default:
@@ -248,6 +319,8 @@ export default function BrandTrackerPro() {
         onDateChange={handleDateChange}
         openingBalance={appState.openingBalance}
         onOpeningBalanceChange={handleOpeningBalanceChange}
+        onBackup={handleBackup}
+        onRestore={handleRestore}
       />
       <AnalyticsCards data={analytics} />
 
@@ -266,7 +339,7 @@ export default function BrandTrackerPro() {
         </div>
       </Tabs>
       
-      {activeTab !== 'inventory' && <ReportSection 
+      {activeTab !== 'inventory' && activeTab !== 'creditors' && <ReportSection 
         entries={appState.entries.filter(e => e.date === appState.selectedDate)} 
         appState={appState}
         onEdit={setEditingEntry}
@@ -344,7 +417,9 @@ const EditEntryModal = ({ entry, onSave, onCancel }: { entry: Entry, onSave: (en
     );
 };
 
-const Header = ({ reportDate, onDateChange, openingBalance, onOpeningBalanceChange }: { reportDate: Date; onDateChange: (date?: Date) => void; openingBalance: number; onOpeningBalanceChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => {
+const Header = ({ reportDate, onDateChange, openingBalance, onOpeningBalanceChange, onBackup, onRestore }: { reportDate: Date; onDateChange: (date?: Date) => void; openingBalance: number; onOpeningBalanceChange: (e: React.ChangeEvent<HTMLInputElement>) => void; onBackup: () => void; onRestore: (e: React.ChangeEvent<HTMLInputElement>) => void; }) => {
+  const restoreInputRef = React.useRef<HTMLInputElement>(null);
+  
   return (
     <div className="rounded-lg border bg-card text-card-foreground shadow-sm mb-6 bg-gradient-to-r from-primary to-purple-600 text-white border-0">
         <div className="p-6">
@@ -386,6 +461,15 @@ const Header = ({ reportDate, onDateChange, openingBalance, onOpeningBalanceChan
                     <div className="flex flex-col">
                         <Label className="text-sm font-medium text-blue-100 mb-1">Opening Balance</Label>
                         <Input type="number" step="0.01" placeholder="0.00" value={openingBalance} onChange={onOpeningBalanceChange} className="bg-white/10 border-white/20 text-white placeholder:text-blue-200 focus-visible:ring-white" />
+                    </div>
+                    <div className="flex gap-2 pt-5">
+                       <input type="file" ref={restoreInputRef} onChange={onRestore} accept=".json" className="hidden" />
+                       <Button variant="outline" size="sm" onClick={() => restoreInputRef.current?.click()} className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
+                         <History className="mr-2 h-4 w-4" /> Restore
+                       </Button>
+                       <Button variant="outline" size="sm" onClick={onBackup} className="bg-white/10 border-white/20 text-white hover:bg-white/20 hover:text-white">
+                         <Download className="mr-2 h-4 w-4" /> Backup
+                       </Button>
                     </div>
                 </div>
             </div>
@@ -823,181 +907,246 @@ const InventoryTab = () => {
     );
 };
 
+const calculateBalance = (transactions: CreditorTransaction[]) => {
+    return transactions.reduce((bal, tx) => {
+        if (tx.type === 'len-den') return bal + tx.amount; // Credit
+        if (tx.type === 'jama') return bal - tx.amount; // Debit
+        return bal;
+    }, 0);
+};
 
 const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate: (updater: (prev: AppState) => AppState) => void }) => {
-    const [name, setName] = React.useState("");
-    const [phone, setPhone] = React.useState("");
-    const [amount, setAmount] = React.useState("");
+    const [view, setView] = React.useState<'list' | 'detail'>('list');
+    const [selectedCreditor, setSelectedCreditor] = React.useState<Creditor | null>(null);
     const { toast } = useToast();
-    const nameInputRef = React.useRef<HTMLInputElement>(null);
-    const phoneInputRef = React.useRef<HTMLInputElement>(null);
-    const amountInputRef = React.useRef<HTMLInputElement>(null);
-    const addButtonRef = React.useRef<HTMLButtonElement>(null);
-    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
-    const addCreditor = () => {
-        const numAmount = parseFloat(amount);
-        if (!name.trim() || isNaN(numAmount) || numAmount < 0) {
-            toast({ title: "Invalid input", description: "Please enter a valid name and amount.", variant: "destructive" });
+    const handleSelectCreditor = (creditorId: number) => {
+        const creditor = creditors.find(c => c.id === creditorId);
+        if (creditor) {
+            setSelectedCreditor(creditor);
+            setView('detail');
+        }
+    };
+
+    const handleAddOrUpdateCreditor = (name: string, phone: string) => {
+        if (!name.trim()) {
+            toast({ title: "Name is required", variant: "destructive" });
             return;
         }
 
         onUpdate(prev => {
-            const existingCreditorIndex = (prev.creditors || []).findIndex(c => c.name.toLowerCase() === name.trim().toLowerCase());
-
-            if (existingCreditorIndex !== -1) {
-                // Update existing creditor
-                const updatedCreditors = [...(prev.creditors || [])];
-                const existingCreditor = updatedCreditors[existingCreditorIndex];
-                
-                existingCreditor.amount += numAmount;
-                if (phone.trim()) {
-                    existingCreditor.phone = phone.trim();
-                }
-
-                toast({ title: "Creditor Updated", description: `${name.trim()}'s balance has been updated.` });
-                return { ...prev, creditors: updatedCreditors };
-            } else {
-                // Add new creditor
-                const newCreditor = { name: name.trim(), amount: numAmount, phone: phone.trim() };
-                toast({ title: "Creditor Added" });
-                return { ...prev, creditors: [...(prev.creditors || []), newCreditor] };
+            const existing = prev.creditors.find(c => c.name.toLowerCase() === name.trim().toLowerCase());
+            if (existing) {
+                toast({ title: "Creditor already exists." });
+                return prev;
             }
+            const newCreditor: Creditor = {
+                id: Date.now(),
+                name: name.trim(),
+                phone: phone.trim(),
+                transactions: []
+            };
+            return { ...prev, creditors: [newCreditor, ...prev.creditors] };
         });
-
-        setName("");
-        setPhone("");
-        setAmount("");
-        nameInputRef.current?.focus();
     };
 
-    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, nextFieldRef: React.RefObject<HTMLInputElement | HTMLButtonElement>) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            nextFieldRef.current?.focus();
-        }
-    };
-    
-    const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            addButtonRef.current?.click();
-        }
-    };
-
-    const removeCreditor = (creditorName: string) => {
+    const handleAddTransaction = (creditorId: number, transaction: Omit<CreditorTransaction, 'id'>) => {
         onUpdate(prev => ({
             ...prev,
-            creditors: (prev.creditors || []).filter(c => c.name !== creditorName)
-        }));
-        toast({ title: "Creditor removed", variant: "destructive" });
-    };
-
-    const handleVcfImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const text = e.target?.result as string;
-            const lines = text.split('\n');
-            const newCreditors: Creditor[] = [];
-            let currentName = "";
-            let currentPhone = "";
-            
-            lines.forEach(line => {
-                if (line.startsWith('FN:')) {
-                    currentName = line.substring(3).trim();
-                } else if (line.startsWith('TEL')) {
-                    currentPhone = line.substring(line.indexOf(':') + 1).trim();
-                } else if (line.startsWith('END:VCARD')) {
-                    if (currentName) {
-                        const isDuplicate = (creditors || []).some(c => c.name.toLowerCase() === currentName.toLowerCase());
-                        if (!isDuplicate) {
-                           newCreditors.push({ name: currentName, amount: 0, phone: currentPhone });
-                        }
-                    }
-                    currentName = "";
-                    currentPhone = "";
+            creditors: prev.creditors.map(c => {
+                if (c.id === creditorId) {
+                    const newTransactions = [...c.transactions, { ...transaction, id: Date.now() }];
+                    // Sort transactions by date descending
+                    newTransactions.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                    return { ...c, transactions: newTransactions };
                 }
-            });
-
-            if (newCreditors.length > 0) {
-                onUpdate(prev => ({
-                    ...prev,
-                    creditors: [...(prev.creditors || []), ...newCreditors]
-                }));
-                toast({ title: "Import Successful", description: `${newCreditors.length} new creditors imported.` });
-            } else {
-                 toast({ title: "Import Info", description: "No new unique contacts found in the VCF file.", variant: "default" });
-            }
-        };
-        reader.readAsText(file);
-        // Reset file input
-        if (event.target) {
-            event.target.value = '';
-        }
+                return c;
+            })
+        }));
+        toast({ title: "Transaction Added" });
     };
 
-    const totalCredit = React.useMemo(() => (creditors || []).reduce((sum, c) => sum + c.amount, 0), [creditors]);
+    const handleRemoveCreditor = (creditorId: number) => {
+        onUpdate(prev => ({
+            ...prev,
+            creditors: prev.creditors.filter(c => c.id !== creditorId)
+        }));
+        toast({ title: "Creditor Removed", variant: "destructive" });
+    };
+
+    if (view === 'detail' && selectedCreditor) {
+        return <CreditorDetailView 
+                  creditor={selectedCreditor} 
+                  onBack={() => setView('list')} 
+                  onAddTransaction={handleAddTransaction}
+               />;
+    }
+
+    return <CreditorListView 
+              creditors={creditors} 
+              onSelectCreditor={handleSelectCreditor} 
+              onAddCreditor={handleAddOrUpdateCreditor}
+              onRemoveCreditor={handleRemoveCreditor}
+            />;
+};
+
+const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemoveCreditor }: { creditors: Creditor[], onSelectCreditor: (id: number) => void, onAddCreditor: (name: string, phone: string) => void, onRemoveCreditor: (id: number) => void }) => {
+    const [name, setName] = React.useState("");
+    const [phone, setPhone] = React.useState("");
+
+    const handleSubmit = () => {
+        onAddCreditor(name, phone);
+        setName("");
+        setPhone("");
+    };
 
     return (
         <Card>
             <CardHeader>
-                <div className="flex justify-between items-center">
-                    <CardTitle>Creditors Report</CardTitle>
-                    <input type="file" ref={fileInputRef} onChange={handleVcfImport} accept=".vcf" style={{ display: 'none' }} />
-                    <Button onClick={() => fileInputRef.current?.click()} variant="outline">
-                        <Upload className="mr-2 h-4 w-4" /> Import VCF
-                    </Button>
+                <CardTitle>Creditors</CardTitle>
+                <CardDescription>Manage your list of creditors.</CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
+                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="New Creditor Name" className="sm:col-span-2" />
+                    <Input value={phone} onChange={e => setPhone(e.target.value)} placeholder="Mobile (Optional)" />
+                </div>
+                <Button onClick={handleSubmit} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add New Creditor</Button>
+
+                <div className="max-h-96 overflow-y-auto space-y-2">
+                    {creditors.length > 0 ? creditors.map(c => {
+                        const balance = calculateBalance(c.transactions);
+                        return (
+                            <Card key={c.id} className="p-3 flex justify-between items-center cursor-pointer hover:bg-muted/50" onClick={() => onSelectCreditor(c.id)}>
+                                <div>
+                                    <p className="font-semibold">{c.name}</p>
+                                    <p className="text-sm text-muted-foreground">{c.phone || 'No phone'}</p>
+                                </div>
+                                <div className="text-right">
+                                    <p className={cn("font-bold text-lg", balance > 0 ? 'text-red-600' : 'text-green-600')}>
+                                        {balance.toFixed(2)}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">{balance >= 0 ? 'Dena Hai' : 'Lena Hai'}</p>
+                                </div>
+                                <Button variant="ghost" size="icon" className="ml-2" onClick={(e) => { e.stopPropagation(); onRemoveCreditor(c.id); }}>
+                                    <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                            </Card>
+                        )
+                    }) : (
+                        <div className="text-center text-muted-foreground py-8">No creditors found.</div>
+                    )}
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
+
+const CreditorDetailView = ({ creditor, onBack, onAddTransaction }: { creditor: Creditor, onBack: () => void, onAddTransaction: (creditorId: number, tx: Omit<CreditorTransaction, 'id'>) => void }) => {
+    const { toast } = useToast();
+    const [isTxModalOpen, setTxModalOpen] = React.useState(false);
+    const balance = calculateBalance(creditor.transactions);
+    
+    const sortedTransactions = [...creditor.transactions].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    const TransactionModal = ({ isOpen, onOpenChange }: { isOpen: boolean, onOpenChange: (open: boolean) => void }) => {
+        const [amount, setAmount] = React.useState("");
+        const [description, setDescription] = React.useState("");
+        const [type, setType] = React.useState<'jama' | 'len-den'>('jama'); // Jama = Paid, Len-den = Credit
+
+        const handleSubmit = () => {
+            const numAmount = parseFloat(amount);
+            if (isNaN(numAmount) || numAmount <= 0) {
+                toast({ title: "Invalid Amount", variant: "destructive" });
+                return;
+            }
+            if (!description.trim()) {
+                toast({ title: "Description required", variant: "destructive" });
+                return;
+            }
+
+            onAddTransaction(creditor.id, {
+                date: format(new Date(), 'yyyy-MM-dd'),
+                type,
+                amount: numAmount,
+                description: description.trim()
+            });
+            setAmount("");
+            setDescription("");
+            onOpenChange(false);
+        };
+
+        return (
+            <Dialog open={isOpen} onOpenChange={onOpenChange}>
+                <DialogContent>
+                    <DialogHeader><DialogTitle>New Transaction for {creditor.name}</DialogTitle></DialogHeader>
+                    <div className="py-4 space-y-4">
+                        <div className="grid grid-cols-2 gap-2">
+                           <Button onClick={() => setType('jama')} variant={type === 'jama' ? 'default' : 'outline'} className="bg-green-600 text-white hover:bg-green-700">Jama (Payment Rcvd)</Button>
+                           <Button onClick={() => setType('len-den')} variant={type === 'len-den' ? 'default' : 'outline'} className="bg-red-600 text-white hover:bg-red-700">Len-den (Credit Given)</Button>
+                        </div>
+                        <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount" />
+                        <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description" />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+                        <Button onClick={handleSubmit}>Add Transaction</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+        );
+    };
+
+    return (
+        <Card>
+            <CardHeader>
+                <div className="flex items-center gap-4">
+                    <Button variant="ghost" size="icon" onClick={onBack}><ArrowLeft /></Button>
+                    <div>
+                        <CardTitle>{creditor.name}</CardTitle>
+                        <CardDescription>{creditor.phone}</CardDescription>
+                    </div>
                 </div>
             </CardHeader>
             <CardContent>
-                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-4">
-                    <Input ref={nameInputRef} value={name} onChange={e => setName(e.target.value)} onKeyDown={(e) => handleKeyDown(e, phoneInputRef)} placeholder="Creditor Name" className="sm:col-span-2" />
-                    <Input ref={phoneInputRef} value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={(e) => handleKeyDown(e, amountInputRef)} placeholder="Mobile (Optional)" />
-                    <Input ref={amountInputRef} type="number" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={handleAmountKeyDown} placeholder="Amount" />
-                </div>
-                 <Button ref={addButtonRef} onClick={addCreditor} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add / Update Creditor</Button>
+                <Card className="mb-4 bg-muted/30">
+                    <CardHeader>
+                        <CardDescription>Final Balance</CardDescription>
+                        <CardTitle className={cn(balance > 0 ? 'text-red-600' : 'text-green-600')}>
+                             {balance >= 0 ? `${balance.toFixed(2)} Dena Hai` : `${Math.abs(balance).toFixed(2)} Lena Hai`}
+                        </CardTitle>
+                    </CardHeader>
+                </Card>
 
+                <Button onClick={() => setTxModalOpen(true)} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add New Transaction</Button>
+                
+                <h3 className="text-lg font-semibold mb-2">Transaction History</h3>
                 <div className="max-h-80 overflow-y-auto">
                     <Table>
                         <TableHeader>
                             <TableRow>
-                                <TableHead>Creditor Name</TableHead>
-                                <TableHead>Mobile</TableHead>
-                                <TableHead className="text-right">Amount</TableHead>
-                                <TableHead className="text-right">Actions</TableHead>
+                                <TableHead>Date</TableHead>
+                                <TableHead>Description</TableHead>
+                                <TableHead className="text-right">Credit (Len-den)</TableHead>
+                                <TableHead className="text-right">Payment (Jama)</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
-                            {(creditors || []).length > 0 ? (creditors || []).map((c, i) => (
-                                <TableRow key={i}>
-                                    <TableCell>{c.name}</TableCell>
-                                    <TableCell>{c.phone || '-'}</TableCell>
-                                    <TableCell className="text-right">{c.amount.toFixed(2)}</TableCell>
-                                    <TableCell className="text-right">
-                                        <Button variant="ghost" size="icon" onClick={() => removeCreditor(c.name)}>
-                                            <Trash2 className="h-4 w-4" />
-                                        </Button>
-                                    </TableCell>
+                            {sortedTransactions.length > 0 ? sortedTransactions.map(tx => (
+                                <TableRow key={tx.id}>
+                                    <TableCell>{format(parse(tx.date, 'yyyy-MM-dd', new Date()), 'PP')}</TableCell>
+                                    <TableCell>{tx.description}</TableCell>
+                                    <TableCell className="text-right text-red-600">{tx.type === 'len-den' ? tx.amount.toFixed(2) : '-'}</TableCell>
+                                    <TableCell className="text-right text-green-600">{tx.type === 'jama' ? tx.amount.toFixed(2) : '-'}</TableCell>
                                 </TableRow>
                             )) : (
-                                <TableRow>
-                                    <TableCell colSpan={4} className="text-center">No creditors found.</TableCell>
-                                </TableRow>
+                                <TableRow><TableCell colSpan={4} className="text-center">No transactions yet.</TableCell></TableRow>
                             )}
                         </TableBody>
-                        <TableFooter>
-                            <TableRow>
-                                <TableHead colSpan={2}>Total</TableHead>
-                                <TableHead className="text-right">{totalCredit.toFixed(2)}</TableHead>
-                                <TableHead></TableHead>
-                            </TableRow>
-                        </TableFooter>
                     </Table>
                 </div>
             </CardContent>
+            <TransactionModal isOpen={isTxModalOpen} onOpenChange={setTxModalOpen} />
         </Card>
     );
 };
@@ -1128,12 +1277,14 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                                 </TableRow>
                             )}
                         </TableBody>
-                        <TableFooter>
-                            <TableRow>
-                                <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
-                                <TableCell colSpan={2} className="text-right font-bold">{total.toFixed(2)}</TableCell>
-                            </TableRow>
-                        </TableFooter>
+                         {data.length > 0 && (
+                            <TableFooter>
+                                <TableRow>
+                                    <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
+                                    <TableCell colSpan={2} className="text-right font-bold">{total.toFixed(2)}</TableCell>
+                                </TableRow>
+                            </TableFooter>
+                        )}
                     </Table>
                 </div>
             </div>
@@ -1169,9 +1320,3 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
-
-
-
-
-
-    

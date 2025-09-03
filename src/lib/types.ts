@@ -23,24 +23,19 @@ export interface StaffMember {
   payments: StaffPayment[];
 }
 
-export interface InventoryItem {
-    supplier: string;
-    billno: string;
-    billdate: string; // YYYY-MM-DD
-    item: string;
-    sizeColourDisplay: string;
-    qty: number;
-    rate: number;
-    mrp: number;
-    hsn: string;
-    cgst: number;
-    sgst: number;
+export interface CreditorTransaction {
+    id: number;
+    date: string; // YYYY-MM-DD
+    type: 'jama' | 'len-den'; // jama = payment received (debit), len-den = credit given (credit)
+    amount: number;
+    description: string;
 }
 
 export interface Creditor {
+    id: number;
     name: string;
-    amount: number;
-    phone?: string;
+    phone: string;
+    transactions: CreditorTransaction[];
 }
 
 export interface AppState {
@@ -48,8 +43,5 @@ export interface AppState {
     staff: StaffMember[];
     openingBalance: number;
     selectedDate: string; // YYYY-MM-DD
-    inventory: {
-        billData: InventoryItem[];
-    };
     creditors: Creditor[];
 }
