@@ -40,6 +40,7 @@ export interface InventoryItem {
 export interface Creditor {
     name: string;
     amount: number;
+    phone?: string;
 }
 
 export interface AppState {

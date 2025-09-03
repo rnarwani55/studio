@@ -19,7 +19,8 @@ import {
   Trash2,
   UserPlus,
   Edit,
-  MoreVertical
+  MoreVertical,
+  Upload
 } from "lucide-react";
 import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -825,35 +826,47 @@ const InventoryTab = () => {
 
 const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate: (updater: (prev: AppState) => AppState) => void }) => {
     const [name, setName] = React.useState("");
+    const [phone, setPhone] = React.useState("");
     const [amount, setAmount] = React.useState("");
     const { toast } = useToast();
     const nameInputRef = React.useRef<HTMLInputElement>(null);
+    const phoneInputRef = React.useRef<HTMLInputElement>(null);
     const amountInputRef = React.useRef<HTMLInputElement>(null);
     const addButtonRef = React.useRef<HTMLButtonElement>(null);
+    const fileInputRef = React.useRef<HTMLInputElement>(null);
 
     const addCreditor = () => {
         const numAmount = parseFloat(amount);
-        if (!name.trim() || isNaN(numAmount) || numAmount <= 0) {
-            toast({ title: "Invalid input", description: "Please enter a valid name and positive amount.", variant: "destructive" });
+        if (!name.trim() || isNaN(numAmount) || numAmount < 0) {
+            toast({ title: "Invalid input", description: "Please enter a valid name and amount.", variant: "destructive" });
             return;
         }
+
+        const isDuplicate = (creditors || []).some(c => c.name.toLowerCase() === name.trim().toLowerCase());
+        if (isDuplicate) {
+            toast({ title: "Duplicate Creditor", description: "A creditor with this name already exists.", variant: "destructive" });
+            return;
+        }
+
         onUpdate(prev => ({
             ...prev,
-            creditors: [...(prev.creditors || []), { name: name.trim(), amount: numAmount }]
+            creditors: [...(prev.creditors || []), { name: name.trim(), amount: numAmount, phone: phone.trim() }]
         }));
+
         setName("");
+        setPhone("");
         setAmount("");
         toast({ title: "Creditor added" });
         nameInputRef.current?.focus();
     };
 
-    const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>, nextFieldRef: React.RefObject<HTMLInputElement | HTMLButtonElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            amountInputRef.current?.focus();
+            nextFieldRef.current?.focus();
         }
     };
-
+    
     const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') {
             e.preventDefault();
@@ -869,24 +882,79 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         toast({ title: "Creditor removed", variant: "destructive" });
     };
 
+    const handleVcfImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target?.result as string;
+            const lines = text.split('\n');
+            const newCreditors: Creditor[] = [];
+            let currentName = "";
+            let currentPhone = "";
+            
+            lines.forEach(line => {
+                if (line.startsWith('FN:')) {
+                    currentName = line.substring(3).trim();
+                } else if (line.startsWith('TEL')) {
+                    currentPhone = line.substring(line.indexOf(':') + 1).trim();
+                } else if (line.startsWith('END:VCARD')) {
+                    if (currentName) {
+                        const isDuplicate = (creditors || []).some(c => c.name.toLowerCase() === currentName.toLowerCase());
+                        if (!isDuplicate) {
+                           newCreditors.push({ name: currentName, amount: 0, phone: currentPhone });
+                        }
+                    }
+                    currentName = "";
+                    currentPhone = "";
+                }
+            });
+
+            if (newCreditors.length > 0) {
+                onUpdate(prev => ({
+                    ...prev,
+                    creditors: [...(prev.creditors || []), ...newCreditors]
+                }));
+                toast({ title: "Import Successful", description: `${newCreditors.length} new creditors imported.` });
+            } else {
+                 toast({ title: "Import Info", description: "No new unique contacts found in the VCF file.", variant: "default" });
+            }
+        };
+        reader.readAsText(file);
+        // Reset file input
+        if (event.target) {
+            event.target.value = '';
+        }
+    };
+
     const totalCredit = React.useMemo(() => (creditors || []).reduce((sum, c) => sum + c.amount, 0), [creditors]);
 
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Creditors Report</CardTitle>
+                <div className="flex justify-between items-center">
+                    <CardTitle>Creditors Report</CardTitle>
+                    <input type="file" ref={fileInputRef} onChange={handleVcfImport} accept=".vcf" style={{ display: 'none' }} />
+                    <Button onClick={() => fileInputRef.current?.click()} variant="outline">
+                        <Upload className="mr-2 h-4 w-4" /> Import VCF
+                    </Button>
+                </div>
             </CardHeader>
             <CardContent>
-                 <div className="flex gap-2 mb-4">
-                    <Input ref={nameInputRef} value={name} onChange={e => setName(e.target.value)} onKeyDown={handleNameKeyDown} placeholder="Creditor Name" />
+                 <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 mb-4">
+                    <Input ref={nameInputRef} value={name} onChange={e => setName(e.target.value)} onKeyDown={(e) => handleKeyDown(e, phoneInputRef)} placeholder="Creditor Name" className="sm:col-span-2" />
+                    <Input ref={phoneInputRef} value={phone} onChange={e => setPhone(e.target.value)} onKeyDown={(e) => handleKeyDown(e, amountInputRef)} placeholder="Mobile (Optional)" />
                     <Input ref={amountInputRef} type="number" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={handleAmountKeyDown} placeholder="Amount" />
-                    <Button ref={addButtonRef} onClick={addCreditor}><PlusCircle className="mr-2 h-4 w-4" /> Add</Button>
                 </div>
+                 <Button ref={addButtonRef} onClick={addCreditor} className="w-full mb-4"><PlusCircle className="mr-2 h-4 w-4" /> Add Creditor</Button>
+
                 <div className="max-h-80 overflow-y-auto">
                     <Table>
                         <TableHeader>
                             <TableRow>
                                 <TableHead>Creditor Name</TableHead>
+                                <TableHead>Mobile</TableHead>
                                 <TableHead className="text-right">Amount</TableHead>
                                 <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
@@ -895,6 +963,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
                             {(creditors || []).length > 0 ? (creditors || []).map((c, i) => (
                                 <TableRow key={i}>
                                     <TableCell>{c.name}</TableCell>
+                                    <TableCell>{c.phone || '-'}</TableCell>
                                     <TableCell className="text-right">{c.amount.toFixed(2)}</TableCell>
                                     <TableCell className="text-right">
                                         <Button variant="ghost" size="icon" onClick={() => removeCreditor(c.name)}>
@@ -904,13 +973,13 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
                                 </TableRow>
                             )) : (
                                 <TableRow>
-                                    <TableCell colSpan={3} className="text-center">No creditors found.</TableCell>
+                                    <TableCell colSpan={4} className="text-center">No creditors found.</TableCell>
                                 </TableRow>
                             )}
                         </TableBody>
                         <TableFooter>
                             <TableRow>
-                                <TableHead>Total</TableHead>
+                                <TableHead colSpan={2}>Total</TableHead>
                                 <TableHead className="text-right">{totalCredit.toFixed(2)}</TableHead>
                                 <TableHead></TableHead>
                             </TableRow>
@@ -1050,8 +1119,8 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                         </TableBody>
                         <TableFooter>
                             <TableRow>
-                                <TableCell colSpan={3} className="text-right font-bold">Total</TableCell>
-                                <TableCell className="text-right font-bold">{total.toFixed(2)}</TableCell>
+                                <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
+                                <TableCell colSpan={2} className="text-right font-bold">{total.toFixed(2)}</TableCell>
                             </TableRow>
                         </TableFooter>
                     </Table>
