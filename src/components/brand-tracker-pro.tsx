@@ -183,20 +183,17 @@ export default function BrandTrackerPro() {
             amount,
             details
         };
-        const newState = { ...prev, entries: [...prev.entries, newEntry] };
         
-        if (type === 'UDHAR DIYE' || type === 'Credit Return') {
-            const match = details.match(/(.*) - Desc: (.*)/);
-            const customerName = match ? match[1] : details;
-            const description = match ? match[2] : (type === 'UDHAR DIYE' ? 'Udhari Sale' : 'Credit Return');
+        const newState = { ...prev, entries: [...prev.entries, newEntry] };
 
-            let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
+        const handleCreditorTransaction = (creditorName: string, transactionType: 'len-den' | 'jama', transactionAmount: number, description: string, phone?: string) => {
+            let creditor = newState.creditors.find(c => c.name.toLowerCase() === creditorName.toLowerCase());
             
             const transaction: CreditorTransaction = {
-                id: newEntry.id, // Use same ID to avoid duplicates
+                id: newEntry.id, 
                 date: prev.selectedDate,
-                type: type === 'UDHAR DIYE' ? 'len-den' : 'jama',
-                amount: Math.abs(amount),
+                type: transactionType,
+                amount: Math.abs(transactionAmount),
                 description: description
             };
 
@@ -205,47 +202,32 @@ export default function BrandTrackerPro() {
             } else {
                 const newCreditor: Creditor = {
                     id: Date.now() + 2,
-                    name: customerName,
-                    phone: '',
+                    name: creditorName,
+                    phone: phone || '',
                     transactions: [transaction]
                 };
                 newState.creditors.push(newCreditor);
             }
+        }
+
+        if (type === 'UDHAR DIYE' || type === 'Credit Return') {
+            const match = details.match(/(.*) - Desc: (.*)/);
+            const customerName = match ? match[1] : details;
+            const description = match ? match[2] : (type === 'UDHAR DIYE' ? 'Udhari Sale' : 'Credit Return');
+            handleCreditorTransaction(customerName, type === 'UDHAR DIYE' ? 'len-den' : 'jama', amount, description);
         } else if (type === 'UDHARI PAID') {
             const match = details.match(/From: (.*) \((Cash|Online)\) - Desc: (.*)/);
             if (match) {
                 const customerName = match[1];
-                const paymentMethod = match[2];
-                const description = match[3];
-
-                let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
-                const transaction: CreditorTransaction = {
-                    id: newEntry.id, // Use same ID to avoid duplicates
-                    date: prev.selectedDate,
-                    type: 'jama',
-                    amount: Math.abs(amount),
-                    description: description || `Payment Received (${paymentMethod})`,
-                };
-                 if (creditor) {
-                    creditor.transactions.push(transaction);
-                } else {
-                     // This case should ideally be handled by ensuring customer exists.
-                    // For now, create a new one.
-                    const newCreditor: Creditor = {
-                        id: Date.now() + 2,
-                        name: customerName,
-                        phone: extra?.phone || '',
-                        transactions: [transaction]
-                    };
-                    newState.creditors.push(newCreditor);
-                }
+                const description = match[3] || `Payment Received (${match[2]})`;
+                handleCreditorTransaction(customerName, 'jama', amount, description, extra?.phone);
             }
         }
-
+        
         return newState;
     });
     toast({ title: "Entry Added", description: `${type} entry of ${Math.abs(amount)} has been added.` });
-  };
+};
   
   const handleUpdateEntry = (updatedEntry: Entry) => {
     updateState(prev => ({
