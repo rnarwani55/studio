@@ -377,19 +377,25 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
         return null;
     }
   };
+  
+  const showHeaderAndAnalytics = !["staff", "inventory", "creditors", "calc"].includes(activeTab);
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 bg-background">
-      <Header
-        reportDate={parse(appState.selectedDate, 'yyyy-MM-dd', new Date())}
-        onDateChange={handleDateChange}
-        openingBalance={appState.openingBalance}
-        onOpeningBalanceChange={handleOpeningBalanceChange}
-        onBackup={handleBackup}
-        onRestore={handleRestore}
-        onClearData={() => setIsClearDataAlertOpen(true)}
-      />
-      <AnalyticsCards data={analytics} />
+      {showHeaderAndAnalytics && (
+        <>
+          <Header
+            reportDate={parse(appState.selectedDate, 'yyyy-MM-dd', new Date())}
+            onDateChange={handleDateChange}
+            openingBalance={appState.openingBalance}
+            onOpeningBalanceChange={handleOpeningBalanceChange}
+            onBackup={handleBackup}
+            onRestore={handleRestore}
+            onClearData={() => setIsClearDataAlertOpen(true)}
+          />
+          <AnalyticsCards data={analytics} />
+        </>
+      )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mb-6">
         <TabsList className="grid w-full grid-cols-3 md:grid-cols-7">
@@ -406,7 +412,7 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
         </div>
       </Tabs>
       
-      {activeTab !== 'inventory' && activeTab !== 'creditors' && <ReportSection 
+      {activeTab !== 'inventory' && activeTab !== 'creditors' && activeTab !== 'staff' && <ReportSection 
         entries={appState.entries.filter(e => e.date === appState.selectedDate)} 
         appState={appState}
         onEdit={setEditingEntry}
@@ -961,7 +967,8 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
         setPaymentModalOpen(false);
     };
 
-    const toggleAbsence = (staffId: number, dateString: string) => {
+    const toggleAbsence = (staffId: number, date: Date) => {
+        const dateString = format(date, 'yyyy-MM-dd');
         onUpdate(prev => ({
             ...prev,
             staff: prev.staff.map(s => {
@@ -975,7 +982,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
                 return s;
             })
         }));
-        toast({ title: `Attendance updated for ${format(parse(dateString, 'yyyy-MM-dd', new Date()), 'PPP')}` });
+        toast({ title: `Attendance updated for ${format(date, 'PPP')}` });
     };
     
     const removeStaff = (staffId: number) => {
@@ -1071,7 +1078,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
     );
 };
 
-const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number, date: string) => void, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
+const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number, date: Date) => void, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
     const currentDate = parse(selectedDate, 'yyyy-MM-dd', new Date());
     const [currentMonth, setCurrentMonth] = React.useState(startOfMonth(currentDate));
 
@@ -1092,8 +1099,9 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
     const absentModifier = { absent: absentDates };
     const absentModifierStyles = { absent: { color: 'white', backgroundColor: 'hsl(var(--destructive))' } };
 
-    const isAbsentToday = (staffMember.absences || []).includes(selectedDate);
-
+    const handleDayClick = (day: Date) => {
+        onToggleAbsence(staffMember.id, day);
+    };
 
     return (
       <Card className="bg-muted/40">
@@ -1104,13 +1112,6 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
               <CardDescription>Salary: {(monthlySalary || 0).toFixed(2)}/month</CardDescription>
             </div>
              <div className="flex items-center gap-2">
-                <Button 
-                    variant={isAbsentToday ? 'destructive' : 'outline'}
-                    size="sm"
-                    onClick={() => onToggleAbsence(staffMember.id, selectedDate)}
-                >
-                    {isAbsentToday ? 'Mark as Present' : 'Mark as Absent'}
-                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
@@ -1152,6 +1153,7 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
                     <Calendar
                         mode="multiple"
                         selected={absentDates}
+                        onDayClick={handleDayClick}
                         month={currentMonth}
                         onMonthChange={setCurrentMonth}
                         modifiers={absentModifier}
@@ -1162,7 +1164,6 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
                             cell: "w-8 h-8 text-xs p-0",
                             day: "w-8 h-8",
                         }}
-                        disabled // Disallow direct clicks
                     />
                </div>
            </div>
@@ -1933,7 +1934,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const expenseAndReturnEntries = entries.filter(e => ['Expense', 'Cash Return', 'Credit Return'].includes(e.type));
 
     // Detailed summary calculation
-    const allTimeOutstandingUdhari = appState.creditors.reduce((total, creditor) => total + calculateBalance(creditor.transactions), 0);
+    const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
     const cashSales = entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0);
     const onlineSales = entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0);
     const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
@@ -1983,8 +1984,8 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                         </span>
                     </div>
                     <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">All-Time Outstanding Udhari</span>
-                        <span className="font-semibold text-orange-500">₹{allTimeOutstandingUdhari.toFixed(2)}</span>
+                        <span className="text-muted-foreground">Today's Udhari Given</span>
+                        <span className="font-semibold text-orange-500">₹{todaysUdhariGiven.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between items-center border-t pt-2 mt-2">
                         <span className="font-bold text-lg">Closing Balance (Cash in Hand)</span>
