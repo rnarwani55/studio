@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import * as React from "react";
@@ -121,9 +122,11 @@ export default function BrandTrackerPro() {
     const udhariPaidOnline = todaysEntries.filter(e => e.type === 'UDHARI PAID' && e.details.includes('(Online)')).reduce((sum, e) => sum + e.amount, 0);
     const expenses = todaysEntries.filter(e => e.type === 'Expense').reduce((sum_1, e) => sum_1 + e.amount, 0);
     const cashReturn = todaysEntries.filter(e => e.type === 'Cash Return').reduce((sum_2, e) => sum_2 + e.amount, 0);
-
+    const udhariGiven = todaysEntries.filter(e => e.type === 'UDHAR DIYE').reduce((sum, e) => sum + e.amount, 0);
+    
     const totalCashIn = cashSales + udhariPaidCash;
     const totalOnlineIn = onlineSales + udhariPaidOnline;
+    const totalSales = cashSales + onlineSales;
     const totalUdhariPaid = udhariPaidCash + udhariPaidOnline;
     const totalExpenses = Math.abs(expenses);
     const todaysCash = opening + totalCashIn + expenses + cashReturn;
@@ -135,6 +138,8 @@ export default function BrandTrackerPro() {
         totalUdhariPaid,
         totalExpenses,
         todaysCash,
+        udhariGiven,
+        totalSales,
     }
   }, [appState.entries, appState.selectedDate, appState.openingBalance]);
 
@@ -210,11 +215,11 @@ export default function BrandTrackerPro() {
             }
         }
 
-        if (type === 'UDHAR DIYE' || type === 'Credit Return') {
+        if (type === 'UDHAR DIYE') {
             const match = details.match(/(.*) - Desc: (.*)/);
             const customerName = match ? match[1] : details;
-            const description = match ? match[2] : (type === 'UDHAR DIYE' ? 'Udhari Sale' : 'Credit Return');
-            handleCreditorTransaction(customerName, type === 'UDHAR DIYE' ? 'len-den' : 'jama', amount, description);
+            const description = match ? match[2] : 'Udhari Sale';
+            handleCreditorTransaction(customerName, 'len-den', amount, description);
         } else if (type === 'UDHARI PAID') {
             const match = details.match(/From: (.*) \((Cash|Online)\) - Desc: (.*)/);
             if (match) {
@@ -222,6 +227,13 @@ export default function BrandTrackerPro() {
                 const description = match[3] || `Payment Received (${match[2]})`;
                 handleCreditorTransaction(customerName, 'jama', amount, description, extra?.phone);
             }
+        } else if (type === 'Credit Return') {
+           const match = details.match(/(.*) - Desc: (.*)/);
+           if (match) {
+             const customerName = match[1];
+             const description = match[2] || 'Credit Return';
+             handleCreditorTransaction(customerName, 'jama', amount, description);
+           }
         }
         
         return newState;
@@ -424,7 +436,10 @@ const EditEntryModal = ({ entry, onSave, onCancel }: { entry: Entry, onSave: (en
             return;
         }
         
-        const finalAmount = ['Expense', 'Cash Return', 'Credit Return'].includes(entry.type) ? -Math.abs(numAmount) : numAmount;
+        const finalAmount = ['Expense', 'Cash Return', 'Credit Return', 'UDHAR DIYE'].includes(entry.type) 
+           ? (entry.type === 'UDHAR DIYE' ? numAmount : -Math.abs(numAmount))
+           : numAmount;
+
 
         onSave({ ...entry, amount: finalAmount, details: details.trim() });
     }
@@ -525,9 +540,9 @@ const Header = ({ reportDate, onDateChange, openingBalance, onOpeningBalanceChan
 const AnalyticsCards = ({ data }: { data: any }) => {
     const cards = [
         { title: "Opening", value: data.opening, icon: <Wallet className="h-4 w-4 text-slate-600" />, color: "text-slate-800" },
-        { title: "Cash Sales", value: data.totalCashIn, icon: <TrendingUp className="h-4 w-4 text-green-600" />, color: "text-green-600" },
-        { title: "Online Sales", value: data.totalOnlineIn, icon: <CreditCard className="h-4 w-4 text-blue-600" />, color: "text-blue-600" },
+        { title: "Total Sales", value: data.totalSales, icon: <TrendingUp className="h-4 w-4 text-green-600" />, color: "text-green-600" },
         { title: "Udhari Rcvd", value: data.totalUdhariPaid, icon: <Receipt className="h-4 w-4 text-yellow-500" />, color: "text-yellow-500" },
+        { title: "Udhari Given", value: data.udhariGiven, icon: <TrendingUp className="h-4 w-4 text-orange-500" />, color: "text-orange-500" },
         { title: "Expenses", value: data.totalExpenses, icon: <TrendingDown className="h-4 w-4 text-red-600" />, color: "text-red-600" },
         { title: "Today's Cash", value: data.todaysCash, icon: <Banknote className="h-4 w-4 text-sky-600" />, color: "text-sky-600" },
     ];
@@ -1095,6 +1110,8 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     const [selectedCreditor, setSelectedCreditor] = React.useState<Creditor | null>(null);
     const { toast } = useToast();
     const vcfInputRef = React.useRef<HTMLInputElement>(null);
+    const [isDuplicateAlertOpen, setIsDuplicateAlertOpen] = React.useState(false);
+    const [duplicateTransaction, setDuplicateTransaction] = React.useState<{ creditorId: number; transaction: Omit<CreditorTransaction, 'id'>; } | null>(null);
 
     const handleSelectCreditor = (creditorId: number) => {
         const creditor = creditors.find(c => c.id === creditorId);
@@ -1143,7 +1160,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         toast({ title: "Creditor Removed", variant: "destructive" });
     };
 
-    const handleAddTransaction = (creditorId: number, transaction: Omit<CreditorTransaction, 'id'>) => {
+    const proceedWithAddTransaction = (creditorId: number, transaction: Omit<CreditorTransaction, 'id'>) => {
         onUpdate(prev => {
             const updatedCreditors = prev.creditors.map(c => {
                 if (c.id === creditorId) {
@@ -1160,7 +1177,27 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             return { ...prev, creditors: updatedCreditors };
         });
         toast({ title: "Transaction Added" });
+        setIsDuplicateAlertOpen(false);
+        setDuplicateTransaction(null);
     };
+
+    const handleAddTransaction = (creditorId: number, transaction: Omit<CreditorTransaction, 'id'>) => {
+        const creditor = creditors.find(c => c.id === creditorId);
+        const isDuplicate = creditor?.transactions.some(tx => 
+            tx.date === transaction.date &&
+            tx.amount === transaction.amount &&
+            tx.description === transaction.description &&
+            tx.type === transaction.type
+        );
+        
+        if (isDuplicate) {
+            setDuplicateTransaction({ creditorId, transaction });
+            setIsDuplicateAlertOpen(true);
+        } else {
+            proceedWithAddTransaction(creditorId, transaction);
+        }
+    };
+
 
     const handleUpdateTransaction = (creditorId: number, updatedTx: CreditorTransaction) => {
          onUpdate(prev => {
@@ -1258,14 +1295,34 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
 
 
     if (view === 'detail' && selectedCreditor) {
-        return <CreditorDetailView 
+        return (
+            <>
+                <CreditorDetailView 
                   creditor={selectedCreditor} 
                   onBack={() => setView('list')} 
                   onAddTransaction={handleAddTransaction}
                   onUpdateTransaction={handleUpdateTransaction}
                   onDeleteTransaction={handleDeleteTransaction}
                   onUpdateCreditor={handleUpdateCreditorDetails}
-               />;
+               />
+                <AlertDialog open={isDuplicateAlertOpen} onOpenChange={setIsDuplicateAlertOpen}>
+                    <AlertDialogContent>
+                        <AlertDialogHeader>
+                            <AlertDialogTitle>Duplicate Transaction?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                                This exact transaction already exists for this date. Are you sure you want to add it again?
+                            </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                            <AlertDialogCancel onClick={() => { setIsDuplicateAlertOpen(false); setDuplicateTransaction(null); }}>Cancel</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => duplicateTransaction && proceedWithAddTransaction(duplicateTransaction.creditorId, duplicateTransaction.transaction)}>
+                                Yes, Add Anyway
+                            </AlertDialogAction>
+                        </AlertDialogFooter>
+                    </AlertDialogContent>
+                </AlertDialog>
+            </>
+        );
     }
 
     return <CreditorListView 
