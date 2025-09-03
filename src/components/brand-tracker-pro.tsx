@@ -210,7 +210,6 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
             const existingCreditorIndex = newCreditors.findIndex(c => c.name.toLowerCase() === creditorName.toLowerCase());
 
             if (existingCreditorIndex > -1) {
-                // Immutable update
                 const existingCreditor = newCreditors[existingCreditorIndex];
                 const updatedCreditor = {
                     ...existingCreditor,
@@ -264,13 +263,29 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
   }
 
   const handleDeleteEntry = (entryId: number) => {
-    updateState(prev => ({
-      ...prev,
-      entries: prev.entries.filter(e => e.id !== entryId)
-    }));
+    updateState(prev => {
+        const entryToDelete = prev.entries.find(e => e.id === entryId);
+        if (!entryToDelete) return prev;
+
+        // Filter out the entry from the main log
+        const newEntries = prev.entries.filter(e => e.id !== entryId);
+        
+        let newCreditors = [...prev.creditors];
+
+        // If the deleted entry was udhari-related, remove it from the creditor's ledger too
+        if (['UDHAR DIYE', 'UDHARI PAID', 'Credit Return'].includes(entryToDelete.type)) {
+            newCreditors = prev.creditors.map(creditor => {
+                const newTransactions = creditor.transactions.filter(tx => tx.id !== entryToDelete.id);
+                return { ...creditor, transactions: newTransactions };
+            });
+        }
+        
+        return { ...prev, entries: newEntries, creditors: newCreditors };
+    });
     toast({ title: "Entry Deleted", variant: "destructive" });
     setDeletingEntry(null);
-  }
+}
+
 
   const handleClearTodaysData = () => {
       updateState(prev => ({
@@ -766,6 +781,7 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
         const value = e.target.value;
         setCustomer(value);
         setSelectedCreditor(null); // Reset selected creditor on change
+        setPhone(''); // Reset phone on customer change
         if (value) {
             const filtered = creditors.filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
             setSuggestions(filtered);
@@ -792,6 +808,11 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
             toast({ title: "Customer Name Required", variant: "destructive" });
             return;
         }
+        // Mobile number is required only if it's a new customer
+        if (!selectedCreditor && !phone.trim()) {
+            toast({ title: "Mobile number required for new customers", variant: "destructive" });
+            return;
+        }
         const descText = description.trim() || `Payment Received (${method})`;
         const details = `From: ${customer.trim()} (${method}) - Desc: ${descText}`;
         onAddEntry('UDHARI PAID', numAmount, details, { phone: phone.trim() });
@@ -809,26 +830,30 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <h3 className="text-lg font-semibold mb-1">Record Udhari Payment</h3>
                     <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} step="0.01" placeholder="Paid Amount" required />
-                    <div className="relative">
-                        <Input value={customer} onChange={handleCustomerChange} placeholder="Customer Name" required autoComplete="off" />
-                        {suggestions.length > 0 && (
-                            <div className="absolute z-10 w-full bg-background border border-border rounded-md mt-1 shadow-lg max-h-40 overflow-y-auto">
-                                {suggestions.map(creditor => (
-                                    <div key={creditor.id} onClick={() => handleSuggestionClick(creditor)} className="p-2 cursor-pointer hover:bg-muted flex justify-between items-center">
-                                        <span>{creditor.name}</span>
-                                        <span className="text-xs text-muted-foreground">Bal: {calculateBalance(creditor.transactions).toFixed(2)}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="relative">
+                            <Input value={customer} onChange={handleCustomerChange} placeholder="Customer Name" required autoComplete="off" />
+                            {suggestions.length > 0 && (
+                                <div className="absolute z-10 w-full bg-background border border-border rounded-md mt-1 shadow-lg max-h-40 overflow-y-auto">
+                                    {suggestions.map(creditor => (
+                                        <div key={creditor.id} onClick={() => handleSuggestionClick(creditor)} className="p-2 cursor-pointer hover:bg-muted flex justify-between items-center">
+                                            <span>{creditor.name}</span>
+                                            <span className="text-xs text-muted-foreground">Bal: {calculateBalance(creditor.transactions).toFixed(2)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                        <Input 
+                            value={phone} 
+                            onChange={e => setPhone(e.target.value)} 
+                            placeholder="Mobile Number (Required for new)" 
+                            disabled={!!selectedCreditor} 
+                            autoComplete="off" 
+                        />
                     </div>
-                    <Input 
-                        value={phone} 
-                        onChange={e => setPhone(e.target.value)} 
-                        placeholder="Mobile Number (Optional)" 
-                        disabled={!!selectedCreditor} 
-                        autoComplete="off" 
-                    />
+
                     <Input value={description} onChange={e => setDescription(e.target.value)} placeholder="Description (optional)" />
                     <div className="flex space-x-4">
                         <Label className="flex items-center"><input type="radio" name="payment-method" value="Cash" checked={method === 'Cash'} onChange={() => setMethod('Cash')} className="mr-2" />Cash</Label>
