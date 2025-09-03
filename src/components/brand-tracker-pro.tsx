@@ -875,7 +875,7 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
                         </div>
                         <Input 
                             value={phone} 
-                            onChange={e => setPhone(e.target.value)} 
+                            onChange={(e) => setPhone(e.target.value)}
                             placeholder="Mobile Number (Required for new)" 
                             disabled={!!selectedCreditor} 
                             autoComplete="off" 
@@ -915,6 +915,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
     const [isPaymentModalOpen, setPaymentModalOpen] = React.useState(false);
     const [editingStaff, setEditingStaff] = React.useState<StaffMember | null>(null);
     const [payingStaff, setPayingStaff] = React.useState<StaffMember | null>(null);
+    const [isMarkingAttendance, setIsMarkingAttendance] = React.useState<StaffMember | null>(null);
 
     const handleSaveStaff = (name: string, monthlySalary: number) => {
         if (!name.trim() || isNaN(monthlySalary) || monthlySalary <= 0) {
@@ -965,9 +966,8 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
         setPayingStaff(null);
         setPaymentModalOpen(false);
     };
-
-    const toggleAbsence = (staffId: number, date: Date) => {
-        const dateString = format(date, 'yyyy-MM-dd');
+    
+    const toggleAbsence = (staffId: number, dateString: string) => {
         onUpdate(prev => ({
             ...prev,
             staff: prev.staff.map(s => {
@@ -981,7 +981,8 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
                 return s;
             })
         }));
-        toast({ title: `Attendance updated for ${format(date, 'PPP')}` });
+        toast({ title: `Attendance updated for ${format(parse(dateString, 'yyyy-MM-dd', new Date()), 'PPP')}` });
+        setIsMarkingAttendance(null);
     };
     
     const removeStaff = (staffId: number) => {
@@ -1069,7 +1070,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
                 </div>
             </CardHeader>
             <CardContent className="space-y-4">
-                {staff.map(s => <StaffCard key={s.id} staffMember={s} selectedDate={selectedDate} onToggleAbsence={toggleAbsence} onEdit={() => { setEditingStaff(s); setStaffModalOpen(true); }} onRemove={() => removeStaff(s.id)} onAddPayment={() => { setPayingStaff(s); setPaymentModalOpen(true); }} />)}
+                {staff.map(s => <StaffCard key={s.id} staffMember={s} selectedDate={selectedDate} onToggleAbsence={() => toggleAbsence(s.id, selectedDate)} isAbsentToday={(s.absences || []).includes(selectedDate)} onEdit={() => { setEditingStaff(s); setStaffModalOpen(true); }} onRemove={() => removeStaff(s.id)} onAddPayment={() => { setPayingStaff(s); setPaymentModalOpen(true); }} />)}
             </CardContent>
             <StaffModal isOpen={isStaffModalOpen} onOpenChange={setStaffModalOpen} onSave={handleSaveStaff} staffMember={editingStaff} />
             <PaymentModal isOpen={isPaymentModalOpen} onOpenChange={setPaymentModalOpen} onSave={handleSavePayment} staffMember={payingStaff} />
@@ -1077,7 +1078,7 @@ const StaffTab = ({ staff, onUpdate, selectedDate }: { staff: StaffMember[], onU
     );
 };
 
-const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number, date: Date) => void, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
+const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, isAbsentToday, onEdit, onRemove, onAddPayment }: { staffMember: StaffMember, selectedDate: string, onToggleAbsence: (id: number, dateString: string) => void, isAbsentToday: boolean, onEdit: () => void, onRemove: () => void, onAddPayment: () => void }) => {
     const currentDate = parse(selectedDate, 'yyyy-MM-dd', new Date());
     const [currentMonth, setCurrentMonth] = React.useState(startOfMonth(currentDate));
 
@@ -1093,14 +1094,6 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
     const salaryPerDay = monthlySalary > 0 && daysInMonth > 0 ? monthlySalary / daysInMonth : 0;
     const deduction = absencesThisMonth * salaryPerDay;
     const netSalary = monthlySalary - deduction - paymentsThisMonth;
-    
-    const absentDates = React.useMemo(() => (staffMember.absences || []).map(d => parse(d, 'yyyy-MM-dd', new Date())), [staffMember.absences]);
-    const absentModifier = { absent: absentDates };
-    const absentModifierStyles = { absent: { color: 'white', backgroundColor: 'hsl(var(--destructive))' } };
-
-    const handleDayClick = (day: Date) => {
-        onToggleAbsence(staffMember.id, day);
-    };
 
     return (
       <Card className="bg-muted/40">
@@ -1111,6 +1104,9 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
               <CardDescription>Salary: {(monthlySalary || 0).toFixed(2)}/month</CardDescription>
             </div>
              <div className="flex items-center gap-2">
+                <Button onClick={() => onToggleAbsence(staffMember.id, selectedDate)} variant={isAbsentToday ? "destructive" : "outline"} size="sm">
+                   {isAbsentToday ? "Mark Present" : "Mark Absent"}
+                </Button>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon"><MoreVertical className="h-4 w-4" /></Button>
@@ -1125,10 +1121,10 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
           </div>
         </CardHeader>
         <CardContent className="p-4 pt-0">
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+           <div className="grid grid-cols-1">
                <div>
                    <h4 className="font-semibold mb-2 text-center">Monthly Summary ({format(currentMonth, 'MMMM yyyy')})</h4>
-                   <div className="grid grid-cols-2 gap-2 text-center text-sm">
+                   <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-center text-sm">
                       <div className="bg-background p-2 rounded-md">
                           <p className="font-semibold">{absencesThisMonth}</p>
                           <p className="text-muted-foreground">Absences</p>
@@ -1146,24 +1142,6 @@ const StaffCard = ({ staffMember, selectedDate, onToggleAbsence, onEdit, onRemov
                           <p className="text-muted-foreground">Net Payable</p>
                       </div>
                    </div>
-               </div>
-               <div className="flex flex-col items-center">
-                    <h4 className="font-semibold mb-2 text-center">Absence Calendar</h4>
-                    <Calendar
-                        mode="multiple"
-                        selected={absentDates}
-                        onDayClick={handleDayClick}
-                        month={currentMonth}
-                        onMonthChange={setCurrentMonth}
-                        modifiers={absentModifier}
-                        modifiersStyles={absentModifierStyles}
-                        className="rounded-md border p-0"
-                        classNames={{
-                            head_cell: "w-8 h-8 font-normal text-xs",
-                            cell: "w-8 h-8 text-xs p-0",
-                            day: "w-8 h-8",
-                        }}
-                    />
                </div>
            </div>
         </CardContent>
@@ -2007,3 +1985,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
+    
+
+    
