@@ -1915,8 +1915,9 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                         {data.length > 0 && (
                             <TableFooter>
                                 <TableRow>
-                                    <TableCell colSpan={3} className="text-right font-bold">Total</TableCell>
+                                    <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
                                     <TableCell className="text-right font-bold">{total.toFixed(2)}</TableCell>
+                                    <TableCell />
                                 </TableRow>
                             </TableFooter>
                         )}
@@ -1932,14 +1933,13 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const expenseAndReturnEntries = entries.filter(e => ['Expense', 'Cash Return', 'Credit Return'].includes(e.type));
 
     // Detailed summary calculation
-    const summaryData = {
-        cashSales: entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0),
-        onlineSales: entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0),
-        udhariPaid: entries.filter(e => e.type === 'UDHARI PAID').reduce((s, e) => s + e.amount, 0),
-        udhariGiven: entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0),
-        totalExpenses: entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0),
-        totalReturns: entries.filter(e => e.type === 'Cash Return' || e.type === 'Credit Return').reduce((s, e) => s + e.amount, 0),
-    };
+    const allTimeOutstandingUdhari = appState.creditors.reduce((total, creditor) => total + calculateBalance(creditor.transactions), 0);
+    const cashSales = entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0);
+    const onlineSales = entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0);
+    const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
+    const expensesAndCashReturns = entries.filter(e => e.type === 'Expense' || e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
+    const todaysCashflow = cashSales + udhariPaidCash + expensesAndCashReturns;
+    const closingBalance = appState.openingBalance + todaysCashflow;
 
 
     return (
@@ -1966,15 +1966,32 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     <TransactionTable title="Expenses & Returns" data={expenseAndReturnEntries} onEdit={onEdit} onDelete={onDelete} />
                 </div>
             </CardContent>
-            <CardFooter className="flex-col items-start p-4 mt-4 border-t">
-                <h3 className="text-lg font-semibold mb-2">Daily Summary</h3>
-                <div className="w-full grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-sm">
-                    <div className="flex justify-between"><span>Cash Sales:</span> <span className="font-medium">{summaryData.cashSales.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span>Online Sales:</span> <span className="font-medium">{summaryData.onlineSales.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span>Udhari Paid:</span> <span className="font-medium text-green-600">{summaryData.udhariPaid.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span>Udhari Given:</span> <span className="font-medium text-red-600">{summaryData.udhariGiven.toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span>Expenses:</span> <span className="font-medium text-red-600">{Math.abs(summaryData.totalExpenses).toFixed(2)}</span></div>
-                    <div className="flex justify-between"><span>Returns:</span> <span className="font-medium text-red-600">{Math.abs(summaryData.totalReturns).toFixed(2)}</span></div>
+            <CardFooter className="flex-col items-stretch p-4 mt-4 border-t bg-muted/40">
+                <div className="space-y-2 text-base">
+                    <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Total Cash Sales</span>
+                        <span className="font-semibold text-green-600">₹{cashSales.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Total Online Sales</span>
+                        <span className="font-semibold text-blue-600">₹{onlineSales.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Today's Cashflow Total</span>
+                        <span className={cn("font-semibold", todaysCashflow >= 0 ? 'text-green-600' : 'text-red-600')}>
+                          ₹{todaysCashflow.toFixed(2)}
+                        </span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">All-Time Outstanding Udhari</span>
+                        <span className="font-semibold text-orange-500">₹{allTimeOutstandingUdhari.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between items-center border-t pt-2 mt-2">
+                        <span className="font-bold text-lg">Closing Balance (Cash in Hand)</span>
+                        <span className={cn("font-bold text-lg", closingBalance >= 0 ? 'text-green-700' : 'text-red-700')}>
+                          ₹{closingBalance.toFixed(2)}
+                        </span>
+                    </div>
                 </div>
             </CardFooter>
         </Card>
