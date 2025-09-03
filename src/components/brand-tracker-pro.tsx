@@ -25,9 +25,10 @@ import {
   History,
   ArrowLeft,
   AlertCircle,
-  Import
+  Import,
+  BookOpen
 } from "lucide-react";
-import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth } from "date-fns";
+import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, differenceInDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -775,13 +776,15 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
     const [method, setMethod] = React.useState('Cash');
     const [suggestions, setSuggestions] = React.useState<Creditor[]>([]);
     const [selectedCreditor, setSelectedCreditor] = React.useState<Creditor | null>(null);
+    const [isNoCreditAlertOpen, setIsNoCreditAlertOpen] = React.useState(false);
+    const [pendingTransaction, setPendingTransaction] = React.useState<(() => void) | null>(null);
     const { toast } = useToast();
 
     const handleCustomerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setCustomer(value);
-        setSelectedCreditor(null); // Reset selected creditor on change
-        setPhone(''); // Reset phone on customer change
+        setSelectedCreditor(null);
+        setPhone(''); 
         if (value) {
             const filtered = creditors.filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
             setSuggestions(filtered);
@@ -796,6 +799,25 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
         setSelectedCreditor(creditor);
         setSuggestions([]);
     };
+    
+    const proceedWithTransaction = () => {
+        const numAmount = parseFloat(amount);
+        const descText = description.trim() || `Payment Received (${method})`;
+        const details = `From: ${customer.trim()} (${method}) - Desc: ${descText}`;
+        onAddEntry('UDHARI PAID', numAmount, details, { phone: phone.trim() });
+        
+        setAmount('');
+        setCustomer('');
+        setPhone('');
+        setDescription('');
+        setSelectedCreditor(null);
+        setSuggestions([]);
+        
+        if(pendingTransaction) {
+            setPendingTransaction(null);
+            setIsNoCreditAlertOpen(false);
+        }
+    };
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -808,23 +830,24 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
             toast({ title: "Customer Name Required", variant: "destructive" });
             return;
         }
-        // Mobile number is required only if it's a new customer
         if (!selectedCreditor && !phone.trim()) {
             toast({ title: "Mobile number required for new customers", variant: "destructive" });
             return;
         }
-        const descText = description.trim() || `Payment Received (${method})`;
-        const details = `From: ${customer.trim()} (${method}) - Desc: ${descText}`;
-        onAddEntry('UDHARI PAID', numAmount, details, { phone: phone.trim() });
-        setAmount('');
-        setCustomer('');
-        setPhone('');
-        setDescription('');
-        setSelectedCreditor(null);
-        setSuggestions([]);
+        
+        const existingCreditor = creditors.find(c => c.name.toLowerCase() === customer.trim().toLowerCase());
+        const balance = existingCreditor ? calculateBalance(existingCreditor.transactions) : 0;
+
+        if (!existingCreditor || balance <= 0) {
+            setPendingTransaction(() => proceedWithTransaction);
+            setIsNoCreditAlertOpen(true);
+        } else {
+            proceedWithTransaction();
+        }
     }
 
     return (
+      <>
         <Card>
             <CardContent className="p-4">
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -863,6 +886,21 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
                 </form>
             </CardContent>
         </Card>
+        <AlertDialog open={isNoCreditAlertOpen} onOpenChange={setIsNoCreditAlertOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>No Credit Detected</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        This customer has no outstanding credit. Are you sure you want to record this payment?
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setPendingTransaction(null)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={pendingTransaction || (() => {})}>Yes, Add Payment</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+      </>
     );
 }
 
@@ -1421,20 +1459,25 @@ const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemove
                     {creditors.length > 0 ? creditors.map(c => {
                         const balance = calculateBalance(c.transactions);
                         return (
-                            <div key={c.id} className="p-3 flex justify-between items-center rounded-md border cursor-pointer hover:bg-muted/50" onClick={() => onSelectCreditor(c.id)}>
-                                <div>
+                            <div key={c.id} className="p-3 flex justify-between items-center rounded-md border">
+                                <div className="flex-1">
                                     <p className="font-semibold">{c.name}</p>
                                     <p className="text-sm text-muted-foreground">{c.phone || 'No phone'}</p>
                                 </div>
-                                <div className="text-right">
+                                <div className="text-right mx-4">
                                     <p className={cn("font-bold text-lg", balance > 0 ? 'text-red-600' : 'text-green-600')}>
                                         {balance.toFixed(2)}
                                     </p>
                                     <p className="text-xs text-muted-foreground">{balance > 0 ? 'Dena Hai' : 'Lena Hai'}</p>
                                 </div>
-                                <Button variant="ghost" size="icon" className="ml-2 opacity-50 hover:opacity-100" onClick={(e) => { e.stopPropagation(); onRemoveCreditor(c.id); }}>
-                                    <Trash2 className="h-4 w-4 text-destructive" />
-                                </Button>
+                                <div className="flex items-center gap-2">
+                                  <Button variant="outline" size="sm" onClick={() => onSelectCreditor(c.id)}>
+                                    <BookOpen className="mr-2 h-4 w-4" /> Ledger
+                                  </Button>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 opacity-50 hover:opacity-100" onClick={(e) => { e.stopPropagation(); onRemoveCreditor(c.id); }}>
+                                      <Trash2 className="h-4 w-4 text-destructive" />
+                                  </Button>
+                                </div>
                             </div>
                         )
                     }) : (
@@ -1496,6 +1539,17 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction, onUpdateTransa
 
     const balance = calculateBalance(creditor.transactions);
 
+    const lastPaymentDate = React.useMemo(() => {
+        const paymentTransactions = creditor.transactions
+            .filter(tx => tx.type === 'jama')
+            .map(tx => parse(tx.date, 'yyyy-MM-dd', new Date()))
+            .sort((a, b) => b.getTime() - a.getTime());
+        return paymentTransactions.length > 0 ? paymentTransactions[0] : null;
+    }, [creditor.transactions]);
+
+    const daysSinceLastPayment = lastPaymentDate ? differenceInDays(new Date(), lastPaymentDate) : null;
+
+
     const requestPassword = (action: () => void) => {
         setActionToConfirm(() => action); // Use a function to ensure the latest action is stored
     };
@@ -1525,11 +1579,19 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction, onUpdateTransa
             </CardHeader>
             <CardContent>
                 <Card className="mb-4 bg-muted/30">
-                    <CardHeader>
-                        <CardDescription>Final Balance</CardDescription>
-                        <CardTitle className={cn(balance > 0 ? 'text-red-600' : 'text-green-600')}>
-                             {balance > 0 ? `${balance.toFixed(2)} Dena Hai` : `${Math.abs(balance).toFixed(2)} Lena Hai`}
-                        </CardTitle>
+                    <CardHeader className="flex-row justify-between items-center p-4">
+                        <div>
+                           <CardDescription>Final Balance</CardDescription>
+                           <CardTitle className={cn(balance > 0 ? 'text-red-600' : 'text-green-600')}>
+                                {balance > 0 ? `${balance.toFixed(2)} Dena Hai` : `${Math.abs(balance).toFixed(2)} Lena Hai`}
+                           </CardTitle>
+                        </div>
+                        <div className="text-right">
+                           <CardDescription>Last Payment</CardDescription>
+                            <CardTitle className="text-base font-medium">
+                                {daysSinceLastPayment !== null ? `${daysSinceLastPayment} days ago` : "N/A"}
+                            </CardTitle>
+                        </div>
                     </CardHeader>
                 </Card>
 
@@ -1857,6 +1919,16 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const cashInEntries = entries.filter(e => e.type === 'Cash' || (e.type === 'UDHARI PAID' && !e.details.includes('(Online)')));
     const onlineInEntries = entries.filter(e => e.type === 'Online' || (e.type === 'UDHARI PAID' && e.details.includes('(Online)')));
     const outflowEntries = entries.filter(e => ['Expense', 'Cash Return', 'Credit Return', 'UDHAR DIYE'].includes(e.type));
+    
+    // Detailed summary calculation
+    const summaryData = {
+        cashSales: entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0),
+        onlineSales: entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0),
+        udhariPaid: entries.filter(e => e.type === 'UDHARI PAID').reduce((s, e) => s + e.amount, 0),
+        udhariGiven: entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0),
+        totalExpenses: entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0),
+        totalReturns: entries.filter(e => e.type === 'Cash Return' || e.type === 'Credit Return').reduce((s, e) => s + e.amount, 0),
+    };
 
 
     return (
@@ -1882,6 +1954,17 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     <TransactionTable title="Outflows" data={outflowEntries} onEdit={onEdit} onDelete={onDelete} />
                 </div>
             </CardContent>
+            <CardFooter className="flex-col items-start p-4 mt-4 border-t">
+                <h3 className="text-lg font-semibold mb-2">Daily Summary</h3>
+                <div className="w-full grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+                    <div className="flex justify-between"><span>Cash Sales:</span> <span className="font-medium">{summaryData.cashSales.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span>Online Sales:</span> <span className="font-medium">{summaryData.onlineSales.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span>Udhari Paid:</span> <span className="font-medium text-green-600">{summaryData.udhariPaid.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span>Udhari Given:</span> <span className="font-medium text-red-600">{summaryData.udhariGiven.toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span>Expenses:</span> <span className="font-medium text-red-600">{Math.abs(summaryData.totalExpenses).toFixed(2)}</span></div>
+                    <div className="flex justify-between"><span>Returns:</span> <span className="font-medium text-red-600">{Math.abs(summaryData.totalReturns).toFixed(2)}</span></div>
+                </div>
+            </CardFooter>
         </Card>
     );
 };
