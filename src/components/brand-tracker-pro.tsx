@@ -1,5 +1,4 @@
 
-
 "use client";
 
 import * as React from "react";
@@ -186,7 +185,10 @@ export default function BrandTrackerPro() {
         const newState = { ...prev, entries: [...prev.entries, newEntry] };
         
         if (type === 'UDHAR DIYE') {
-            const customerName = details;
+            const match = details.match(/(.*) - Desc: (.*)/);
+            const customerName = match ? match[1] : details;
+            const description = match ? match[2] : 'Udhari Sale';
+
             let creditor = newState.creditors.find(c => c.name.toLowerCase() === customerName.toLowerCase());
             
             const transaction: CreditorTransaction = {
@@ -194,7 +196,7 @@ export default function BrandTrackerPro() {
                 date: prev.selectedDate,
                 type: 'len-den',
                 amount: Math.abs(amount),
-                description: 'Udhari Sale'
+                description: description
             };
 
             if (creditor) {
@@ -332,7 +334,7 @@ export default function BrandTrackerPro() {
   const renderTabContent = () => {
     switch (activeTab) {
       case "sales":
-        return <SalesTab onAddEntry={handleAddEntry} />;
+        return <SalesTab onAddEntry={handleAddEntry} creditors={appState.creditors || []}/>;
       case "expenses":
         return <ExpensesTab onAddEntry={handleAddEntry} />;
       case "udhari":
@@ -564,11 +566,36 @@ const AnalyticsCards = ({ data }: { data: any }) => {
     );
 };
 
-const SalesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: number, details: string) => void }) => {
+const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string) => void, creditors: Creditor[] }) => {
     const [saleType, setSaleType] = React.useState<Entry['type']>('Online');
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
+    const [description, setDescription] = React.useState('');
+    const [suggestions, setSuggestions] = React.useState<Creditor[]>([]);
     const { toast } = useToast();
+    const amountInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleButtonClick = (type: Entry['type']) => {
+        setSaleType(type);
+        amountInputRef.current?.focus();
+    };
+    
+    const handleCustomerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setCustomer(value);
+        if (value) {
+            const filtered = creditors.filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
+            setSuggestions(filtered);
+        } else {
+            setSuggestions([]);
+        }
+    };
+
+    const handleSuggestionClick = (creditor: Creditor) => {
+        setCustomer(creditor.name);
+        setSuggestions([]);
+    };
+
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
@@ -584,11 +611,18 @@ const SalesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: nu
         }
         
         const finalAmount = ['Cash Return', 'Credit Return'].includes(saleType) ? -Math.abs(numAmount) : numAmount;
-        const details = ['UDHAR DIYE', 'Credit Return'].includes(saleType) ? customer.trim() : saleType;
-        
+        let details = '';
+        if (['UDHAR DIYE', 'Credit Return'].includes(saleType)) {
+            details = `${customer.trim()} - Desc: ${description.trim() || (saleType === 'UDHAR DIYE' ? 'Udhari Sale' : 'Credit Return')}`;
+        } else {
+            details = saleType;
+        }
+
         onAddEntry(saleType, finalAmount, details);
         setAmount('');
         setCustomer('');
+        setDescription('');
+        setSuggestions([]);
     }
 
     const saleTypes: { label: string, type: Entry['type'], className?: string }[] = [
@@ -605,32 +639,47 @@ const SalesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount: nu
                 <form onSubmit={handleSubmit} className="space-y-3">
                     <h3 className="text-lg font-semibold mb-1">Add Sale or Return</h3>
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                        {saleTypes.slice(0,3).map(st => (
+                        {saleTypes.map(st => (
                             <Button 
                                 key={st.type} 
                                 type="button" 
                                 variant={saleType === st.type ? "default" : "outline"}
                                 className={cn(st.className, saleType === st.type && "ring-2 ring-primary")}
-                                onClick={() => setSaleType(st.type)}
-                            >
-                                {st.label}
-                            </Button>
-                        ))}
-                         {saleTypes.slice(3).map(st => (
-                            <Button 
-                                key={st.type} 
-                                type="button" 
-                                variant={saleType === st.type ? "default" : "outline"}
-                                className={cn(st.className, saleType === st.type && "ring-2 ring-primary")}
-                                onClick={() => setSaleType(st.type)}
+                                onClick={() => handleButtonClick(st.type)}
                             >
                                 {st.label}
                             </Button>
                         ))}
                     </div>
-                    <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} step="0.01" placeholder="Amount" required />
+                    <Input ref={amountInputRef} type="number" value={amount} onChange={e => setAmount(e.target.value)} step="0.01" placeholder="Amount" required />
+                    
                     {['UDHAR DIYE', 'Credit Return'].includes(saleType) && (
-                        <Input value={customer} onChange={e => setCustomer(e.target.value)} placeholder="Customer Name (required for Udhari)" required />
+                        <div className="space-y-3">
+                            <div className="relative">
+                                <Input 
+                                    value={customer} 
+                                    onChange={handleCustomerChange} 
+                                    placeholder="Customer Name (required for Udhari)" 
+                                    required 
+                                    autoComplete="off"
+                                />
+                                {suggestions.length > 0 && (
+                                    <div className="absolute z-10 w-full bg-background border border-border rounded-md mt-1 shadow-lg max-h-40 overflow-y-auto">
+                                        {suggestions.map(creditor => (
+                                            <div key={creditor.id} onClick={() => handleSuggestionClick(creditor)} className="p-2 cursor-pointer hover:bg-muted flex justify-between items-center">
+                                                <span>{creditor.name}</span>
+                                                <span className="text-xs text-muted-foreground">Bal: {calculateBalance(creditor.transactions).toFixed(2)}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <Input 
+                                value={description}
+                                onChange={e => setDescription(e.target.value)}
+                                placeholder="Description (optional)"
+                            />
+                        </div>
                     )}
                     <Button type="submit" className="w-full transition-transform hover:scale-105">Add Entry</Button>
                 </form>
@@ -1454,3 +1503,4 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     );
 };
 
+    
