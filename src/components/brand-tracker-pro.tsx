@@ -178,7 +178,7 @@ export default function BrandTrackerPro() {
     setAppState(updater);
   };
   
-  const handleAddEntry = (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => {
+const handleAddEntry = (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => {
     updateState(prev => {
         const newEntry: Entry = {
             id: Date.now(),
@@ -188,12 +188,17 @@ export default function BrandTrackerPro() {
             amount,
             details
         };
-        
-        let newState = { ...prev, entries: [...prev.entries, newEntry] };
 
-        const handleCreditorTransaction = (creditorName: string, transactionType: 'len-den' | 'jama', transactionAmount: number, description: string, phone?: string) => {
-            let creditor = newState.creditors.find(c => c.name.toLowerCase() === creditorName.toLowerCase());
-            
+        let newEntries = [...prev.entries, newEntry];
+        let newCreditors = [...prev.creditors];
+
+        const handleCreditorUpdate = (
+            creditorName: string, 
+            transactionType: 'len-den' | 'jama', 
+            transactionAmount: number, 
+            description: string, 
+            phone?: string
+        ) => {
             const transaction: CreditorTransaction = {
                 id: newEntry.id, 
                 date: prev.selectedDate,
@@ -202,8 +207,16 @@ export default function BrandTrackerPro() {
                 description: description
             };
 
-            if (creditor) {
-                creditor.transactions.push(transaction);
+            const existingCreditorIndex = newCreditors.findIndex(c => c.name.toLowerCase() === creditorName.toLowerCase());
+
+            if (existingCreditorIndex > -1) {
+                // Immutable update
+                const existingCreditor = newCreditors[existingCreditorIndex];
+                const updatedCreditor = {
+                    ...existingCreditor,
+                    transactions: [...existingCreditor.transactions, transaction]
+                };
+                newCreditors[existingCreditorIndex] = updatedCreditor;
             } else {
                 const newCreditor: Creditor = {
                     id: Date.now() + 2,
@@ -211,32 +224,32 @@ export default function BrandTrackerPro() {
                     phone: phone || '',
                     transactions: [transaction]
                 };
-                newState.creditors.push(newCreditor);
+                newCreditors.push(newCreditor);
             }
-        }
+        };
 
         if (type === 'UDHAR DIYE') {
             const match = details.match(/(.*) - Desc: (.*)/);
             const customerName = match ? match[1] : details;
             const description = match ? match[2] : 'Udhari Sale';
-            handleCreditorTransaction(customerName, 'len-den', amount, description, extra?.phone);
+            handleCreditorUpdate(customerName, 'len-den', amount, description, extra?.phone);
         } else if (type === 'UDHARI PAID') {
             const match = details.match(/From: (.*) \((Cash|Online)\) - Desc: (.*)/);
             if (match) {
                 const customerName = match[1];
                 const description = match[3] || `Payment Received (${match[2]})`;
-                handleCreditorTransaction(customerName, 'jama', amount, description, extra?.phone);
+                handleCreditorUpdate(customerName, 'jama', amount, description, extra?.phone);
             }
         } else if (type === 'Credit Return') {
            const match = details.match(/(.*) - Desc: (.*)/);
            if (match) {
              const customerName = match[1];
              const description = match[2] || 'Credit Return';
-             handleCreditorTransaction(customerName, 'jama', amount, description);
+             handleCreditorUpdate(customerName, 'jama', amount, description);
            }
         }
         
-        return newState;
+        return { ...prev, entries: newEntries, creditors: newCreditors };
     });
     toast({ title: "Entry Added", description: `${type} entry of ${Math.abs(amount)} has been added.` });
 };
