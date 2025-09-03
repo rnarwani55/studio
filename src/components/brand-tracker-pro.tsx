@@ -359,11 +359,11 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
   const renderTabContent = () => {
     switch (activeTab) {
       case "sales":
-        return <SalesTab onAddEntry={handleAddEntry} creditors={appState.creditors || []}/>;
+        return <SalesTab onAddEntry={handleAddEntry} creditors={appState.creditors || []} appState={appState} />;
       case "expenses":
         return <ExpensesTab onAddEntry={handleAddEntry} />;
       case "udhari":
-        return <UdhariTab onAddEntry={handleAddEntry} creditors={appState.creditors || []} />;
+        return <UdhariTab onAddEntry={handleAddEntry} creditors={appState.creditors || []} appState={appState} />;
       case "staff":
         return <StaffTab staff={appState.staff} onUpdate={updateState} selectedDate={appState.selectedDate} />;
       case "inventory":
@@ -600,7 +600,7 @@ const AnalyticsCards = ({ data }: { data: any }) => {
     );
 };
 
-const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, creditors: Creditor[] }) => {
+const SalesTab = ({ onAddEntry, creditors, appState }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, creditors: Creditor[], appState: AppState }) => {
     const [saleType, setSaleType] = React.useState<Entry['type']>('Online');
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
@@ -608,6 +608,8 @@ const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'],
     const [suggestions, setSuggestions] = React.useState<Creditor[]>([]);
     const { toast } = useToast();
     const amountInputRef = React.useRef<HTMLInputElement>(null);
+    const [isDuplicateAlertOpen, setIsDuplicateAlertOpen] = React.useState(false);
+    const [pendingTransaction, setPendingTransaction] = React.useState<(() => void) | null>(null);
 
     const handleButtonClick = (type: Entry['type']) => {
         setSaleType(type);
@@ -631,19 +633,8 @@ const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'],
     };
 
 
-    const handleSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
+    const proceedWithTransaction = () => {
         const numAmount = parseFloat(amount);
-        if (isNaN(numAmount) || numAmount <= 0) {
-            toast({ title: "Invalid Amount", description: "Please enter a positive number.", variant: "destructive" });
-            return;
-        }
-
-        if (['UDHAR DIYE', 'Credit Return'].includes(saleType) && !customer.trim()) {
-            toast({ title: "Customer Name Required", description: "Please enter a customer name for Udhari transactions.", variant: "destructive" });
-            return;
-        }
-        
         const finalAmount = ['Cash Return', 'Credit Return'].includes(saleType) ? -Math.abs(numAmount) : numAmount;
         let details = '';
         if (['UDHAR DIYE', 'Credit Return'].includes(saleType)) {
@@ -657,6 +648,41 @@ const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'],
         setCustomer('');
         setDescription('');
         setSuggestions([]);
+        if (pendingTransaction) {
+          setIsDuplicateAlertOpen(false);
+          setPendingTransaction(null);
+        }
+    };
+
+    const handleSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        const numAmount = parseFloat(amount);
+        if (isNaN(numAmount) || numAmount <= 0) {
+            toast({ title: "Invalid Amount", description: "Please enter a positive number.", variant: "destructive" });
+            return;
+        }
+
+        if (['UDHAR DIYE', 'Credit Return'].includes(saleType) && !customer.trim()) {
+            toast({ title: "Customer Name Required", description: "Please enter a customer name for Udhari transactions.", variant: "destructive" });
+            return;
+        }
+
+        if (saleType === 'UDHAR DIYE') {
+            const isDuplicate = appState.entries.some(entry => 
+                entry.date === appState.selectedDate &&
+                entry.type === 'UDHAR DIYE' &&
+                Math.abs(entry.amount) === numAmount &&
+                entry.details.startsWith(customer.trim())
+            );
+
+            if (isDuplicate) {
+                setPendingTransaction(() => proceedWithTransaction);
+                setIsDuplicateAlertOpen(true);
+                return;
+            }
+        }
+        
+        proceedWithTransaction();
     }
 
     const saleTypes: { label: string, type: Entry['type'], className?: string }[] = [
@@ -671,6 +697,7 @@ const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'],
 
 
     return (
+      <>
         <Card>
             <CardContent className="p-4">
                 <form onSubmit={handleSubmit} className="space-y-3">
@@ -735,6 +762,21 @@ const SalesTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'],
                 </form>
             </CardContent>
         </Card>
+         <AlertDialog open={isDuplicateAlertOpen} onOpenChange={setIsDuplicateAlertOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Duplicate Udhari Sale?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        An udhari sale for this customer with the same amount already exists today. Are you sure you want to add another one?
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setPendingTransaction(null)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={pendingTransaction || (() => {})}>Yes, Add Anyway</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+      </>
     );
 }
 
@@ -773,7 +815,7 @@ const ExpensesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount:
     );
 }
 
-const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, creditors: Creditor[] }) => {
+const UdhariTab = ({ onAddEntry, creditors, appState }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, creditors: Creditor[], appState: AppState }) => {
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
     const [phone, setPhone] = React.useState('');
@@ -782,6 +824,7 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
     const [suggestions, setSuggestions] = React.useState<Creditor[]>([]);
     const [selectedCreditor, setSelectedCreditor] = React.useState<Creditor | null>(null);
     const [isNoCreditAlertOpen, setIsNoCreditAlertOpen] = React.useState(false);
+    const [isDuplicateAlertOpen, setIsDuplicateAlertOpen] = React.useState(false);
     const [pendingTransaction, setPendingTransaction] = React.useState<(() => void) | null>(null);
     const { toast } = useToast();
 
@@ -821,6 +864,7 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
         if(pendingTransaction) {
             setPendingTransaction(null);
             setIsNoCreditAlertOpen(false);
+            setIsDuplicateAlertOpen(false);
         }
     };
 
@@ -837,6 +881,19 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
         }
         if (!selectedCreditor && !phone.trim()) {
             toast({ title: "Mobile number required for new customers", variant: "destructive" });
+            return;
+        }
+
+        const isDuplicate = appState.entries.some(entry => 
+            entry.date === appState.selectedDate &&
+            entry.type === 'UDHARI PAID' &&
+            Math.abs(entry.amount) === numAmount &&
+            entry.details.includes(`From: ${customer.trim()}`)
+        );
+
+        if (isDuplicate) {
+            setPendingTransaction(() => proceedWithTransaction);
+            setIsDuplicateAlertOpen(true);
             return;
         }
         
@@ -902,6 +959,20 @@ const UdhariTab = ({ onAddEntry, creditors }: { onAddEntry: (type: Entry['type']
                 <AlertDialogFooter>
                     <AlertDialogCancel onClick={() => setPendingTransaction(null)}>Cancel</AlertDialogCancel>
                     <AlertDialogAction onClick={pendingTransaction || (() => {})}>Yes, Add Payment</AlertDialogAction>
+                </AlertDialogFooter>
+            </AlertDialogContent>
+        </AlertDialog>
+        <AlertDialog open={isDuplicateAlertOpen} onOpenChange={setIsDuplicateAlertOpen}>
+            <AlertDialogContent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Duplicate Payment?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                        A payment for this customer with the same amount already exists today. Are you sure you want to add another one?
+                    </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                    <AlertDialogCancel onClick={() => setPendingTransaction(null)}>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={pendingTransaction || (() => {})}>Yes, Add Anyway</AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>
@@ -1175,8 +1246,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     const [isDuplicateAlertOpen, setIsDuplicateAlertOpen] = React.useState(false);
     const [duplicateTransaction, setDuplicateTransaction] = React.useState<{ creditorId: number; transaction: Omit<CreditorTransaction, 'id'>; } | null>(null);
     const [actionToConfirm, setActionToConfirm] = React.useState<(() => void) | null>(null);
-    const [deletingCreditorId, setDeletingCreditorId] = React.useState<number | null>(null);
-
+    
     const handleSelectCreditor = (creditorId: number) => {
         const creditor = creditors.find(c => c.id === creditorId);
         if (creditor) {
@@ -1222,11 +1292,10 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             creditors: prev.creditors.filter(c => c.id !== creditorId)
         }));
         toast({ title: "Creditor Removed", variant: "destructive" });
-        setDeletingCreditorId(null);
     };
 
     const requestPassword = (action: () => void) => {
-        setActionToConfirm(() => action); // Use a function to ensure the latest action is stored
+        setActionToConfirm(() => action);
     };
 
     const handleConfirmAction = () => {
@@ -1295,8 +1364,6 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     };
 
     const handleDeleteTransactionFromLedger = (creditorId: number, transactionId: number) => {
-        // This function ONLY removes a transaction from the creditor's ledger.
-        // It does NOT remove the original entry from the main appState.entries.
         onUpdate(prev => {
             const updatedCreditors = prev.creditors.map(c => {
                 if (c.id === creditorId) {
@@ -1336,7 +1403,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
                     } else if (line.toUpperCase().startsWith('FN:')) {
                         currentContact.name = line.substring(3).trim();
                     } else if (line.toUpperCase().startsWith('TEL')) {
-                        if(!currentContact.phone) { // Only take the first number
+                        if(!currentContact.phone) { 
                            currentContact.phone = line.substring(line.indexOf(':') + 1).trim();
                         }
                     }
@@ -1380,7 +1447,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
                   onBack={() => setView('list')} 
                   onAddTransaction={handleAddTransaction}
                   onUpdateTransaction={handleUpdateTransaction}
-                  onDeleteTransaction={handleDeleteTransactionFromLedger}
+                  onDeleteTransaction={(creditorId, txId) => requestPassword(() => handleDeleteTransactionFromLedger(creditorId, txId))}
                   onUpdateCreditor={handleUpdateCreditorDetails}
                />
                 <AlertDialog open={isDuplicateAlertOpen} onOpenChange={setIsDuplicateAlertOpen}>
@@ -1399,6 +1466,11 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
+                 <PasswordPrompt
+                    open={!!actionToConfirm}
+                    onOpenChange={(open) => !open && setActionToConfirm(null)}
+                    onConfirm={handleConfirmAction}
+                />
             </>
         );
     }
@@ -1544,7 +1616,6 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction, onUpdateTransa
     const [isTxModalOpen, setTxModalOpen] = React.useState(false);
     const [isEditCreditorModalOpen, setEditCreditorModalOpen] = React.useState(false);
     const [editingTx, setEditingTx] = React.useState<CreditorTransaction | null>(null);
-    const [actionToConfirm, setActionToConfirm] = React.useState<(() => void) | null>(null);
 
     const balance = calculateBalance(creditor.transactions);
 
@@ -1558,17 +1629,6 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction, onUpdateTransa
 
     const daysSinceLastPayment = lastPaymentDate ? differenceInDays(new Date(), lastPaymentDate) : null;
 
-
-    const requestPassword = (action: () => void) => {
-        setActionToConfirm(() => action); // Use a function to ensure the latest action is stored
-    };
-
-    const handleConfirmAction = () => {
-        if (actionToConfirm) {
-            actionToConfirm();
-            setActionToConfirm(null);
-        }
-    };
     
     return (
         <Card>
@@ -1629,7 +1689,7 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction, onUpdateTransa
                                         <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { setEditingTx(tx); setTxModalOpen(true); }}>
                                             <Edit className="h-4 w-4" />
                                         </Button>
-                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => requestPassword(() => onDeleteTransaction(creditor.id, tx.id))}>
+                                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => onDeleteTransaction(creditor.id, tx.id)}>
                                             <Trash2 className="h-4 w-4 text-destructive" />
                                         </Button>
                                     </TableCell>
@@ -1648,18 +1708,13 @@ const CreditorDetailView = ({ creditor, onBack, onAddTransaction, onUpdateTransa
                 creditor={creditor}
                 transaction={editingTx}
                 onAddTransaction={onAddTransaction}
-                onUpdateTransaction={(tx) => requestPassword(() => onUpdateTransaction(creditor.id, tx))}
+                onUpdateTransaction={(tx) => onUpdateTransaction(creditor.id, tx)}
             />
             <EditCreditorModal 
                 isOpen={isEditCreditorModalOpen}
                 onOpenChange={setEditCreditorModalOpen}
                 creditor={creditor}
                 onSave={onUpdateCreditor}
-            />
-            <PasswordPrompt
-                open={!!actionToConfirm}
-                onOpenChange={(open) => !open && setActionToConfirm(null)}
-                onConfirm={handleConfirmAction}
             />
         </Card>
     );
@@ -1720,7 +1775,7 @@ const TransactionModal = ({ isOpen, onOpenChange, creditor, transaction, onAddTr
             setDate(new Date());
             setType('jama');
         }
-    }, [transaction]);
+    }, [transaction, isOpen]);
 
     const handleSubmit = () => {
         const numAmount = parseFloat(amount);
@@ -2006,9 +2061,3 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
-
-    
-
-    
-
-    
