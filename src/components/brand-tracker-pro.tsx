@@ -1918,8 +1918,9 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
 
     const cashInEntries = entries.filter(e => e.type === 'Cash' || (e.type === 'UDHARI PAID' && !e.details.includes('(Online)')));
     const onlineInEntries = entries.filter(e => e.type === 'Online' || (e.type === 'UDHARI PAID' && e.details.includes('(Online)')));
-    const outflowEntries = entries.filter(e => ['Expense', 'Cash Return', 'Credit Return', 'UDHAR DIYE'].includes(e.type));
-    
+    const udhariGivenEntries = entries.filter(e => e.type === 'UDHAR DIYE');
+    const expenseAndReturnEntries = entries.filter(e => ['Expense', 'Cash Return', 'Credit Return'].includes(e.type));
+
     // Detailed summary calculation
     const summaryData = {
         cashSales: entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0),
@@ -1948,10 +1949,11 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                 </div>
             </CardHeader>
             <CardContent>
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <TransactionTable title="Cash In" data={cashInEntries} onEdit={onEdit} onDelete={onDelete} />
-                    <TransactionTable title="Online" data={onlineInEntries} onEdit={onEdit} onDelete={onDelete} />
-                    <TransactionTable title="Outflows" data={outflowEntries} onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionTable title="Online In" data={onlineInEntries} onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionTable title="Udhari Given" data={udhariGivenEntries} onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionTable title="Expenses & Returns" data={expenseAndReturnEntries} onEdit={onEdit} onDelete={onDelete} />
                 </div>
             </CardContent>
             <CardFooter className="flex-col items-start p-4 mt-4 border-t">
