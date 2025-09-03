@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -425,13 +426,38 @@
         function calculateRoundedMRP(rawMrp) {
             const roundBase = parseInt(document.getElementById("roundTo").value);
             const hundredFloor = Math.floor(rawMrp / 100) * 100;
-            let candidates = [hundredFloor + roundBase];
-            if (roundBase === 49) candidates.push(hundredFloor + 99);
-            if (Math.abs(rawMrp - (hundredFloor + 100 + roundBase)) < Math.abs(rawMrp - candidates[candidates.length - 1])) {
-                candidates.push(hundredFloor + 100 + roundBase);
-                if (roundBase === 49) candidates.push(hundredFloor + 100 + 99);
+            const hundredCeil = Math.ceil(rawMrp / 100) * 100;
+            
+            let candidates = [];
+            
+            // Candidates around the floor
+            candidates.push(hundredFloor + roundBase);
+            if (roundBase === 49) {
+                candidates.push(hundredFloor + 99);
             }
-            return candidates.reduce((closest, current) => (Math.abs(current - rawMrp) < Math.abs(closest - rawMrp) ? current : closest), candidates[0]);
+
+            // Candidates around the ceiling
+            if (hundredFloor !== hundredCeil) {
+                candidates.push(hundredCeil + roundBase);
+                if (roundBase === 49) {
+                    candidates.push(hundredCeil + 99);
+                }
+            }
+
+            // Candidates from the previous hundred block (for values like 101)
+            if (hundredFloor > 0) {
+                 candidates.push(hundredFloor - 100 + roundBase);
+                 if (roundBase === 49) {
+                    candidates.push(hundredFloor - 100 + 99);
+                 }
+            }
+            
+            return candidates.reduce((closest, current) => {
+                if (Math.abs(current - rawMrp) < Math.abs(closest - rawMrp)) {
+                    return current;
+                }
+                return closest;
+            });
         }
 
         function expandSizes(input) {

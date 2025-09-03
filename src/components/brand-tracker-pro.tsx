@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import * as React from "react";
@@ -826,6 +827,8 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     const [name, setName] = React.useState("");
     const [amount, setAmount] = React.useState("");
     const { toast } = useToast();
+    const amountInputRef = React.useRef<HTMLInputElement>(null);
+    const addButtonRef = React.useRef<HTMLButtonElement>(null);
 
     const addCreditor = () => {
         const numAmount = parseFloat(amount);
@@ -840,6 +843,20 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         setName("");
         setAmount("");
         toast({ title: "Creditor added" });
+    };
+
+    const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            amountInputRef.current?.focus();
+        }
+    };
+
+    const handleAmountKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addButtonRef.current?.click();
+        }
     };
 
     const removeCreditor = (creditorName: string) => {
@@ -859,9 +876,9 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             </CardHeader>
             <CardContent>
                  <div className="flex gap-2 mb-4">
-                    <Input value={name} onChange={e => setName(e.target.value)} placeholder="Creditor Name" />
-                    <Input type="number" value={amount} onChange={e => setAmount(e.target.value)} placeholder="Amount" />
-                    <Button onClick={addCreditor}><PlusCircle className="mr-2 h-4 w-4" /> Add</Button>
+                    <Input value={name} onChange={e => setName(e.target.value)} onKeyDown={handleNameKeyDown} placeholder="Creditor Name" />
+                    <Input ref={amountInputRef} type="number" value={amount} onChange={e => setAmount(e.target.value)} onKeyDown={handleAmountKeyDown} placeholder="Amount" />
+                    <Button ref={addButtonRef} onClick={addCreditor}><PlusCircle className="mr-2 h-4 w-4" /> Add</Button>
                 </div>
                 <div className="max-h-80 overflow-y-auto">
                     <Table>
@@ -1031,9 +1048,8 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                         </TableBody>
                         <TableFooter>
                             <TableRow>
-                                <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
+                                <TableCell colSpan={3} className="text-right font-bold">Total</TableCell>
                                 <TableCell className="text-right font-bold">{total.toFixed(2)}</TableCell>
-                                <TableCell></TableCell>
                             </TableRow>
                         </TableFooter>
                     </Table>
@@ -1071,4 +1087,5 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
 
