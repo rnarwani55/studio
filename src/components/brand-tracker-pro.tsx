@@ -25,7 +25,8 @@ import {
   ArrowLeft,
   AlertCircle,
   Import,
-  BookOpen
+  BookOpen,
+  ShieldAlert,
 } from "lucide-react";
 import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, differenceInDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -82,7 +83,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
-import type { Entry, StaffMember, Creditor, AppState, StaffPayment, CreditorTransaction } from '@/lib/types';
+import type { Entry, StaffMember, Creditor, AppState, StaffPayment, CreditorTransaction, DeletionRecord } from '@/lib/types';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
@@ -96,6 +97,7 @@ const initialAppState: AppState = {
     openingBalance: 0,
     selectedDate: format(new Date(), "yyyy-MM-dd"),
     creditors: [],
+    deletionLog: [],
 };
 
 
@@ -151,7 +153,7 @@ export default function BrandTrackerPro() {
         if (savedData) {
             const parsedData = JSON.parse(savedData);
             if(parsedData.selectedDate && isValid(new Date(parsedData.selectedDate))){
-               setAppState(parsedData);
+               setAppState({...initialAppState, ...parsedData});
             } else {
                setAppState(initialAppState);
             }
@@ -178,7 +180,19 @@ export default function BrandTrackerPro() {
     setAppState(updater);
   };
   
-const handleAddEntry = (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => {
+  const addDeletionLog = (description: string) => {
+      const newLog: DeletionRecord = {
+          id: Date.now(),
+          timestamp: new Date().toISOString(),
+          description
+      };
+      updateState(prev => ({
+          ...prev,
+          deletionLog: [...(prev.deletionLog || []), newLog]
+      }));
+  };
+
+  const handleAddEntry = (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => {
     updateState(prev => {
         const newEntry: Entry = {
             id: Date.now(),
@@ -336,7 +350,7 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
               const restoredState = JSON.parse(text);
               // Basic validation of the restored state
               if (restoredState && restoredState.entries && restoredState.selectedDate) {
-                  setAppState(restoredState);
+                  updateState(prev => ({...prev, ...restoredState}));
                   toast({ title: "Restore Successful", description: "Application data has been restored." });
               } else {
                   throw new Error("Invalid backup file format.");
@@ -359,17 +373,19 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
   const renderTabContent = () => {
     switch (activeTab) {
       case "sales":
-        return <SalesTab onAddEntry={handleAddEntry} creditors={appState.creditors || []} appState={appState} />;
+        return <SalesTab onAddEntry={handleAddEntry} appState={appState} />;
       case "expenses":
         return <ExpensesTab onAddEntry={handleAddEntry} />;
       case "udhari":
-        return <UdhariTab onAddEntry={handleAddEntry} creditors={appState.creditors || []} appState={appState} />;
+        return <UdhariTab onAddEntry={handleAddEntry} appState={appState} />;
       case "staff":
         return <StaffTab staff={appState.staff} onUpdate={updateState} selectedDate={appState.selectedDate} />;
       case "inventory":
         return <InventoryTab />;
       case "creditors":
-        return <CreditorsTab creditors={appState.creditors || []} onUpdate={updateState} />;
+        return <CreditorsTab appState={appState} onUpdate={updateState} addDeletionLog={addDeletionLog} />;
+      case "log":
+        return <DeletionLogTab log={appState.deletionLog || []} />;
       case "calc":
         return <CalculatorTab />;
       default:
@@ -377,7 +393,7 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
     }
   };
   
-  const showHeaderAndAnalytics = !["staff", "inventory", "creditors", "calc"].includes(activeTab);
+  const showHeaderAndAnalytics = !["staff", "inventory", "creditors", "calc", "log"].includes(activeTab);
 
   return (
     <div className="max-w-7xl mx-auto p-4 sm:p-6 lg:p-8 bg-background">
@@ -397,13 +413,14 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
       )}
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full mb-6">
-        <TabsList className="grid w-full grid-cols-3 md:grid-cols-7">
+        <TabsList className="grid w-full grid-cols-4 md:grid-cols-8">
           <TabsTrigger value="sales"><TrendingUp className="w-4 h-4 mr-2" />Sales</TabsTrigger>
           <TabsTrigger value="expenses"><TrendingDown className="w-4 h-4 mr-2" />Expenses</TabsTrigger>
           <TabsTrigger value="udhari"><Receipt className="w-4 h-4 mr-2" />Udhari</TabsTrigger>
           <TabsTrigger value="staff"><Users className="w-4 h-4 mr-2" />Staff</TabsTrigger>
           <TabsTrigger value="inventory"><Archive className="w-4 h-4 mr-2" />Inventory</TabsTrigger>
           <TabsTrigger value="creditors"><FileText className="w-4 h-4 mr-2" />Creditors</TabsTrigger>
+          <TabsTrigger value="log"><ShieldAlert className="w-4 h-4 mr-2" />Log</TabsTrigger>
           <TabsTrigger value="calc"><Calculator className="w-4 h-4 mr-2" />Calculator</TabsTrigger>
         </TabsList>
         <div className="mt-4">
@@ -411,7 +428,7 @@ const handleAddEntry = (type: Entry['type'], amount: number, details: string, ex
         </div>
       </Tabs>
       
-      {activeTab !== 'inventory' && activeTab !== 'creditors' && activeTab !== 'staff' && <ReportSection 
+      {activeTab !== 'inventory' && activeTab !== 'creditors' && activeTab !== 'staff' && activeTab !== 'log' && activeTab !== 'calc' && <ReportSection 
         entries={appState.entries.filter(e => e.date === appState.selectedDate)} 
         appState={appState}
         onEdit={setEditingEntry}
@@ -600,7 +617,7 @@ const AnalyticsCards = ({ data }: { data: any }) => {
     );
 };
 
-const SalesTab = ({ onAddEntry, creditors, appState }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, creditors: Creditor[], appState: AppState }) => {
+const SalesTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, appState: AppState }) => {
     const [saleType, setSaleType] = React.useState<Entry['type']>('Online');
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
@@ -620,7 +637,7 @@ const SalesTab = ({ onAddEntry, creditors, appState }: { onAddEntry: (type: Entr
         const value = e.target.value;
         setCustomer(value);
         if (value) {
-            const filtered = creditors.filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
+            const filtered = (appState.creditors || []).filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
             setSuggestions(filtered);
         } else {
             setSuggestions([]);
@@ -815,7 +832,7 @@ const ExpensesTab = ({ onAddEntry }: { onAddEntry: (type: Entry['type'], amount:
     );
 }
 
-const UdhariTab = ({ onAddEntry, creditors, appState }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, creditors: Creditor[], appState: AppState }) => {
+const UdhariTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'], amount: number, details: string, extra?: { phone?: string }) => void, appState: AppState }) => {
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
     const [phone, setPhone] = React.useState('');
@@ -834,7 +851,7 @@ const UdhariTab = ({ onAddEntry, creditors, appState }: { onAddEntry: (type: Ent
         setSelectedCreditor(null);
         setPhone(''); 
         if (value) {
-            const filtered = creditors.filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
+            const filtered = (appState.creditors || []).filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
             setSuggestions(filtered);
         } else {
             setSuggestions([]);
@@ -897,7 +914,7 @@ const UdhariTab = ({ onAddEntry, creditors, appState }: { onAddEntry: (type: Ent
             return;
         }
         
-        const existingCreditor = creditors.find(c => c.name.toLowerCase() === customer.trim().toLowerCase());
+        const existingCreditor = appState.creditors.find(c => c.name.toLowerCase() === customer.trim().toLowerCase());
         const balance = existingCreditor ? calculateBalance(existingCreditor.transactions) : 0;
 
         if (!existingCreditor || balance <= 0) {
@@ -1238,7 +1255,7 @@ const calculateBalance = (transactions: CreditorTransaction[]) => {
     }, 0);
 };
 
-const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate: (updater: (prev: AppState) => AppState) => void }) => {
+const CreditorsTab = ({ appState, onUpdate, addDeletionLog }: { appState: AppState, onUpdate: (updater: (prev: AppState) => AppState) => void, addDeletionLog: (desc: string) => void }) => {
     const [view, setView] = React.useState<'list' | 'detail'>('list');
     const [selectedCreditor, setSelectedCreditor] = React.useState<Creditor | null>(null);
     const { toast } = useToast();
@@ -1248,7 +1265,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     const [actionToConfirm, setActionToConfirm] = React.useState<(() => void) | null>(null);
     
     const handleSelectCreditor = (creditorId: number) => {
-        const creditor = creditors.find(c => c.id === creditorId);
+        const creditor = appState.creditors.find(c => c.id === creditorId);
         if (creditor) {
             setSelectedCreditor(creditor);
             setView('detail');
@@ -1286,11 +1303,12 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
         toast({ title: "Creditor Updated" });
     };
 
-    const handleRemoveCreditor = (creditorId: number) => {
+    const handleRemoveCreditor = (creditorToRemove: Creditor) => {
         onUpdate(prev => ({
             ...prev,
-            creditors: prev.creditors.filter(c => c.id !== creditorId)
+            creditors: prev.creditors.filter(c => c.id !== creditorToRemove.id)
         }));
+        addDeletionLog(`Removed creditor: ${creditorToRemove.name} (ID: ${creditorToRemove.id})`);
         toast({ title: "Creditor Removed", variant: "destructive" });
     };
 
@@ -1327,7 +1345,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     };
 
     const handleAddTransaction = (creditorId: number, transaction: Omit<CreditorTransaction, 'id'>) => {
-        const creditor = creditors.find(c => c.id === creditorId);
+        const creditor = appState.creditors.find(c => c.id === creditorId);
         const isDuplicate = creditor?.transactions.some(tx => 
             tx.date === transaction.date &&
             tx.amount === transaction.amount &&
@@ -1364,6 +1382,15 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     };
 
     const handleDeleteTransactionFromLedger = (creditorId: number, transactionId: number) => {
+        let deletedTxDesc = `Unknown transaction from creditor ID ${creditorId}`;
+        const creditor = appState.creditors.find(c => c.id === creditorId);
+        if (creditor) {
+            const tx = creditor.transactions.find(t => t.id === transactionId);
+            if (tx) {
+                 deletedTxDesc = `Tx ID ${tx.id} (${tx.type} ${tx.amount} on ${tx.date}) for ${creditor.name}`;
+            }
+        }
+        
         onUpdate(prev => {
             const updatedCreditors = prev.creditors.map(c => {
                 if (c.id === creditorId) {
@@ -1378,6 +1405,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
             }
             return { ...prev, creditors: updatedCreditors };
         });
+        addDeletionLog(`Deleted ledger transaction: ${deletedTxDesc}`);
         toast({ title: "Ledger Transaction Deleted", variant: 'destructive', description: "The entry in the daily report remains." });
     };
     
@@ -1477,10 +1505,10 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
 
     return <>
         <CreditorListView 
-            creditors={creditors} 
+            creditors={appState.creditors} 
             onSelectCreditor={handleSelectCreditor} 
             onAddCreditor={handleAddOrUpdateCreditor}
-            onRemoveCreditor={(creditorId) => requestPassword(() => handleRemoveCreditor(creditorId))}
+            onRemoveCreditor={(creditor) => requestPassword(() => handleRemoveCreditor(creditor))}
             onImportClick={() => vcfInputRef.current?.click()}
             vcfInputRef={vcfInputRef}
             onVcfFileChange={handleImportVCF}
@@ -1493,7 +1521,7 @@ const CreditorsTab = ({ creditors, onUpdate }: { creditors: Creditor[], onUpdate
     </>;
 };
 
-const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemoveCreditor, onImportClick, vcfInputRef, onVcfFileChange }: { creditors: Creditor[], onSelectCreditor: (id: number) => void, onAddCreditor: (name: string, phone: string) => void, onRemoveCreditor: (id: number) => void, onImportClick: () => void, vcfInputRef: React.RefObject<HTMLInputElement>, onVcfFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => {
+const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemoveCreditor, onImportClick, vcfInputRef, onVcfFileChange }: { creditors: Creditor[], onSelectCreditor: (id: number) => void, onAddCreditor: (name: string, phone: string) => void, onRemoveCreditor: (creditor: Creditor) => void, onImportClick: () => void, vcfInputRef: React.RefObject<HTMLInputElement>, onVcfFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void }) => {
     const [name, setName] = React.useState("");
     const [phone, setPhone] = React.useState("");
     const nameInputRef = React.useRef<HTMLInputElement>(null);
@@ -1555,7 +1583,7 @@ const CreditorListView = ({ creditors, onSelectCreditor, onAddCreditor, onRemove
                                   <Button variant="outline" size="sm" onClick={() => onSelectCreditor(c.id)}>
                                     <BookOpen className="mr-2 h-4 w-4" /> Ledger
                                   </Button>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 opacity-50 hover:opacity-100" onClick={(e) => { e.stopPropagation(); onRemoveCreditor(c.id); }}>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 opacity-50 hover:opacity-100" onClick={(e) => { e.stopPropagation(); onRemoveCreditor(c); }}>
                                       <Trash2 className="h-4 w-4 text-destructive" />
                                   </Button>
                                 </div>
@@ -1873,6 +1901,46 @@ const CalculatorTab = () => {
     );
 };
 
+const DeletionLogTab = ({ log }: { log: DeletionRecord[] }) => {
+    return (
+        <Card>
+            <CardHeader>
+                <CardTitle>Deletion Log</CardTitle>
+                <CardDescription>
+                    This is a secure log of all deleted items. This log cannot be altered.
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                <div className="max-h-96 overflow-y-auto border rounded-md">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Timestamp</TableHead>
+                                <TableHead>Action</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {log.length > 0 ? [...log].reverse().map(record => (
+                                <TableRow key={record.id}>
+                                    <TableCell>{format(new Date(record.timestamp), "PPP p")}</TableCell>
+                                    <TableCell>{record.description}</TableCell>
+                                </TableRow>
+                            )) : (
+                                <TableRow>
+                                    <TableCell colSpan={2} className="text-center text-muted-foreground py-8">
+                                        No deletions have been recorded.
+                                    </TableCell>
+                                </TableRow>
+                            )}
+                        </TableBody>
+                    </Table>
+                </div>
+            </CardContent>
+        </Card>
+    );
+};
+
+
 const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry[], appState: AppState, onEdit: (entry: Entry) => void, onDelete: (entry: Entry) => void }) => {
     const { toast } = useToast();
 
@@ -2064,4 +2132,3 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
-

@@ -1,4 +1,5 @@
 
+
 export interface Entry {
   id: number;
   date: string; // YYYY-MM-DD
@@ -38,10 +39,17 @@ export interface Creditor {
     transactions: CreditorTransaction[];
 }
 
+export interface DeletionRecord {
+    id: number;
+    timestamp: string; // ISO 8601 format
+    description: string;
+}
+
 export interface AppState {
     entries: Entry[];
     staff: StaffMember[];
     openingBalance: number;
     selectedDate: string; // YYYY-MM-DD
     creditors: Creditor[];
+    deletionLog: DeletionRecord[];
 }
