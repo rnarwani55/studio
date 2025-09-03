@@ -1025,8 +1025,8 @@ const InventoryTab = () => {
 
 const calculateBalance = (transactions: CreditorTransaction[]) => {
     return transactions.reduce((bal, tx) => {
-        if (tx.type === 'len-den') return bal + tx.amount; // Credit
-        if (tx.type === 'jama') return bal - tx.amount; // Debit
+        if (tx.type === 'len-den') return bal + tx.amount; // Credit Given (customer owes us)
+        if (tx.type === 'jama') return bal - tx.amount; // Payment Received (customer balance decreases)
         return bal;
     }, 0);
 };
