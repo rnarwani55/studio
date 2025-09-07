@@ -321,7 +321,7 @@ export default function BrandTrackerPro() {
     }
   };
 
-  const handleOpeningBalanceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onOpeningBalanceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = parseFloat(e.target.value) || 0;
     updateState(prev => ({...prev, openingBalance: value}));
   };
@@ -2425,3 +2425,6 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
+
+    
