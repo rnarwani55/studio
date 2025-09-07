@@ -2253,6 +2253,47 @@ const drawDateWidgetPdf = (doc: jsPDF, dateStr: string) => {
     doc.text(month, x + widgetWidth / 2, y + 22, { align: 'center' });
 };
 
+const drawSummaryWidgetsPdf = (doc: jsPDF, summaryData: Record<string, number>) => {
+    const widgets = [
+        { label: "Opening Bal", key: "openingBalance", color: [100, 116, 139] },
+        { label: "Cash Sale", key: "cashSales", color: [22, 163, 74] },
+        { label: "Online Sale", key: "onlineSales", color: [37, 99, 235] },
+        { label: "Udhari Given", key: "udhariGiven", color: [234, 88, 12] },
+        { label: "Udhari Rcvd", key: "udhariPaid", color: [202, 138, 4] },
+        { label: "Expenses", key: "expenses", color: [220, 38, 38] },
+        { label: "Closing Bal", key: "closingBalance", color: [22, 163, 74] },
+    ];
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const margin = 14;
+    const totalWidth = pageWidth - (margin * 2);
+    const widgetWidth = (totalWidth - (6 * 4)) / 7;
+    let x = margin;
+    const y = 35;
+
+    widgets.forEach(widget => {
+        const value = summaryData[widget.key] || 0;
+        if (value !== 0 || widget.key === 'openingBalance' || widget.key === 'closingBalance') {
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.5);
+            doc.roundedRect(x, y, widgetWidth, 18, 2, 2, 'S');
+            
+            doc.setFontSize(8);
+            doc.setTextColor(100, 116, 139);
+            doc.text(widget.label, x + widgetWidth / 2, y + 5, { align: 'center' });
+
+            doc.setFontSize(11);
+            doc.setFont('helvetica', 'bold');
+            doc.setTextColor(widget.color[0], widget.color[1], widget.color[2]);
+            doc.text(Math.abs(value).toFixed(2), x + widgetWidth / 2, y + 13, { align: 'center' });
+            doc.setFont('helvetica', 'normal');
+            
+            x += widgetWidth + 4;
+        }
+    });
+    return y + 18 + 10;
+};
+
+
 const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' = 'all') => {
     const doc = new jsPDF();
     const data = getReportData(appState, filterType);
@@ -2274,11 +2315,30 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     };
 
     addHeader(doc);
-    let yPos = 45;
+    
+    // Calculate summary data for widgets
+    const cashSales = data.todaysEntries.filter(e => e.type === 'Cash').reduce((sum, e) => sum + e.amount, 0);
+    const onlineSales = data.todaysEntries.filter(e => e.type === 'Online').reduce((sum, e) => sum + e.amount, 0);
+    const udhariPaid = data.todaysEntries.filter(e => e.type === 'UDHARI PAID').reduce((sum, e) => sum + e.amount, 0);
+    const udhariGiven = data.todaysEntries.filter(e => e.type === 'UDHAR DIYE').reduce((sum, e) => sum + e.amount, 0);
+    const expenses = data.todaysEntries.filter(e => e.type === 'Expense' || e.type === 'Cash Return' || e.type === 'Credit Return').reduce((sum, e) => sum + e.amount, 0);
+    
+    const widgetSummary = {
+        openingBalance: data.openingBalance,
+        cashSales: cashSales,
+        onlineSales: onlineSales,
+        udhariGiven: udhariGiven,
+        udhariPaid: udhariPaid,
+        expenses: expenses,
+        closingBalance: data.closingBalance
+    };
+
+    let yPos = drawSummaryWidgetsPdf(doc, widgetSummary);
+
 
     const mainHeadStyles = { fillColor: [41, 45, 50], textColor: [255, 255, 255], fontStyle: 'bold' };
     const headStyles = { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' };
-    const footStyles = { fillColor: [209, 213, 219], textColor: [0, 0, 0], fontStyle: 'bold' };
+    const footStyles = { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold' };
 
     const transactionCategories = [
         { title: 'Cash Sales', types: ['Cash'], positive: true },
@@ -2393,7 +2453,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         head: [[{ content: 'Final Summary', colSpan: 2, styles: { ...mainHeadStyles, halign: 'center' } }]],
         body: finalSummaryBody,
         theme: 'grid',
-        headStyles: headStyles,
+        headStyles: { ...headStyles, halign: 'center' },
         didParseCell: (hookData) => {
             const rowLabel = hookData.row.raw[0] as string;
             const rowStyle = summaryRows.find(r => r[0] === rowLabel);
@@ -2474,6 +2534,7 @@ const PdfSummaryModal = ({ isOpen, onClose, appState, filterType }: { isOpen: bo
     );
 };
     
+
 
 
 
