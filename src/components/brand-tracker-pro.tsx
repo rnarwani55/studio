@@ -2454,32 +2454,6 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         drawTable(cat.title, body, total);
     });
     
-    // Staff Report
-    if (data.staff.length > 0 && filterType === 'all') {
-        const staffBody = data.staff.map(s => {
-            const status = (s.absences || []).includes(data.selectedDate) ? 'Absent' : 'Present';
-            const payment = (s.payments || []).find(p => p.date === data.selectedDate);
-            const paymentInfo = payment ? `${payment.description}: ${payment.amount.toFixed(2)}` : 'No Payment';
-            return [s.name, status, paymentInfo];
-        });
-        autoTable(doc, {
-            ...tableOptions,
-            startY: lastFinalY ? lastFinalY + 5 : Y_START_POSITION,
-            head: [[{ content: 'Daily Staff Report', colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
-            body: [['Staff Name', 'Attendance', 'Payments Today']],
-        });
-        lastFinalY = (doc as any).lastAutoTable.finalY;
-
-        autoTable(doc, {
-            ...tableOptions,
-            startY: lastFinalY,
-            body: staffBody,
-            showHead: false,
-        });
-        lastFinalY = (doc as any).lastAutoTable.finalY;
-    }
-
-
     // Final Summary
     const summaryRows = [
       ['Opening Balance', widgetSummary.openingBalance, [0, 0, 0]],
@@ -2514,6 +2488,32 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
             }
         },
     });
+    lastFinalY = (doc as any).lastAutoTable.finalY;
+    
+    // Staff Report
+    if (data.staff.length > 0 && filterType === 'all') {
+        const staffBody = data.staff.map(s => {
+            const status = (s.absences || []).includes(data.selectedDate) ? 'Absent' : 'Present';
+            const payment = (s.payments || []).find(p => p.date === data.selectedDate);
+            const paymentInfo = payment ? `${payment.description}: ${payment.amount.toFixed(2)}` : 'No Payment';
+            return [s.name, status, paymentInfo];
+        });
+        autoTable(doc, {
+            ...tableOptions,
+            startY: lastFinalY ? lastFinalY + 5 : Y_START_POSITION,
+            head: [[{ content: 'Daily Staff Report', colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
+            body: [['Staff Name', 'Attendance', 'Payments Today']],
+        });
+        lastFinalY = (doc as any).lastAutoTable.finalY;
+
+        autoTable(doc, {
+            ...tableOptions,
+            startY: lastFinalY,
+            body: staffBody,
+            showHead: false,
+        });
+        lastFinalY = (doc as any).lastAutoTable.finalY;
+    }
     
     doc.save(`Report-MOB-${filterType}-${appState.selectedDate}.pdf`);
 };
@@ -2594,3 +2594,4 @@ const PdfSummaryModal = ({ isOpen, onClose, appState, filterType }: { isOpen: bo
     
 
     
+
