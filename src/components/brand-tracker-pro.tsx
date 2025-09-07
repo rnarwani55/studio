@@ -1827,7 +1827,7 @@ const TransactionModal = ({ isOpen, onOpenChange, creditor, transaction, onAddTr
         if (transaction) {
             setAmount(transaction.amount.toString());
             setDescription(transaction.description);
-            setDate(parse(transaction.date, 'yyyy-MM-dd', new Date()));
+setDate(parse(transaction.date, 'yyyy-MM-dd', new Date()));
             setType(transaction.type);
         } else {
             setAmount("");
@@ -1986,15 +1986,17 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         doc.text(`Daily Report: ${selectedDateFmt}`, 105, 22, { align: 'center' });
         
         let finalY = 30;
+        const tableHeaderStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0] };
+        const tableSubHeaderStyles = { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold' };
 
-        const transactionTypes: { title: string, type: Entry['type'] | Entry['type'][] }[] = [
-            { title: 'Cash Sales', type: 'Cash' },
-            { title: 'Online Sales', type: 'Online' },
-            { title: 'Udhari Given', type: 'UDHAR DIYE' },
-            { title: 'Udhari Paid', type: 'UDHARI PAID' },
-            { title: 'Expenses', type: 'Expense' },
-            { title: 'Cash Returns', type: 'Cash Return' },
-            { title: 'Credit Returns', type: 'Credit Return' },
+        const transactionTypes: { title: string, type: Entry['type'] | Entry['type'][], positive: boolean }[] = [
+            { title: 'Cash Sales', type: 'Cash', positive: true },
+            { title: 'Online Sales', type: 'Online', positive: true },
+            { title: 'Udhari Paid', type: 'UDHARI PAID', positive: true },
+            { title: 'Udhari Given', type: 'UDHAR DIYE', positive: false },
+            { title: 'Expenses', type: 'Expense', positive: false },
+            { title: 'Cash Returns', type: 'Cash Return', positive: false },
+            { title: 'Credit Returns', type: 'Credit Return', positive: false },
         ];
         
         const summaryData: Record<string, number> = {};
@@ -2002,7 +2004,20 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         transactionTypes.forEach(tt => {
             const data = entries
                 .filter(e => Array.isArray(tt.type) ? tt.type.includes(e.type) : e.type === tt.type)
-                .map(e => [e.time, e.details, e.amount.toFixed(2)]);
+                .map(e => {
+                    let details = e.details;
+                    if(e.type === 'UDHAR DIYE') {
+                        const match = e.details.match(/(.*) - Desc:/);
+                        const customerName = match ? match[1].trim() : e.details.trim();
+                        const creditor = appState.creditors.find(c => c.name === customerName);
+                        if (creditor) {
+                            const newBalance = calculateBalance(creditor.transactions);
+                            const oldBalance = newBalance - e.amount;
+                            details = `${customerName}\n(${oldBalance.toFixed(2)} old + ${e.amount.toFixed(2)} today) = ${newBalance.toFixed(2)}`
+                        }
+                    }
+                    return [e.time, details, e.amount.toFixed(2)]
+                });
             
             const total = data.reduce((sum, row) => sum + parseFloat(row[2]), 0);
             summaryData[tt.title] = total;
@@ -2010,14 +2025,14 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
             if (data.length > 0) {
                  autoTable(doc, {
                     startY: finalY,
-                    head: [[{ content: tt.title, colSpan: 3, styles: { halign: 'center', fillColor: [22, 160, 133] } }]],
+                    head: [[{ content: tt.title, styles: tableSubHeaderStyles }]],
                     body: [
                       ['Time', 'Details', 'Amount'],
                       ...data,
-                      [{ content: 'Total', styles: { halign: 'right', fontStyle: 'bold' } }, '', { content: total.toFixed(2), styles: { fontStyle: 'bold' } }]
+                      [{ content: 'Total', styles: { halign: 'right', fontStyle: 'bold' } }, '', { content: Math.abs(total).toFixed(2), styles: { fontStyle: 'bold' } }]
                     ],
                     theme: 'grid',
-                    headStyles: { fillColor: [41, 128, 185] },
+                    headStyles: tableHeaderStyles,
                     didDrawPage: (data) => { finalY = data.cursor?.y || 30; }
                 });
                 finalY = (doc as any).lastAutoTable.finalY + 10;
@@ -2038,13 +2053,13 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
 
             autoTable(doc, {
                 startY: finalY,
-                head: [[{ content: 'Staff Attendance & Payments', colSpan: 3, styles: { halign: 'center', fillColor: [22, 160, 133] } }]],
+                head: [[{ content: 'Staff Attendance & Payments', colSpan: 3, styles: tableSubHeaderStyles }]],
                 body: [
                     ['Name', 'Status', 'Payment Today'],
                     ...staffReportBody
                 ],
                 theme: 'grid',
-                headStyles: { fillColor: [41, 128, 185] },
+                headStyles: tableHeaderStyles,
                 didDrawPage: (data) => { finalY = data.cursor?.y || 30; }
             });
             finalY = (doc as any).lastAutoTable.finalY + 10;
@@ -2060,21 +2075,29 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         const openingBalance = appState.openingBalance;
         const closingBalance = openingBalance + cashSales + udhariPaidCash + totalExpenses + cashReturns;
 
+        const summaryRows: (string | { content: string; styles: any })[][] = [];
+        const addSummaryRow = (label: string, value: number, color?: [number, number, number]) => {
+            if (value !== 0) {
+                summaryRows.push([label, { content: value.toFixed(2), styles: { textColor: color || [0,0,0], fontStyle: 'bold' } }]);
+            }
+        };
+        
+        if (openingBalance > 0) addSummaryRow('Opening Balance', openingBalance);
+        addSummaryRow('Total Cash Sales', cashSales, [0, 128, 0]); // Green
+        addSummaryRow('Total Online Sales', onlineSales, [0, 0, 255]); // Blue
+        addSummaryRow('Total Udhari Paid (Cash)', udhariPaidCash, [255, 165, 0]); // Orange
+        addSummaryRow('Total Udhari Paid (Online)', udhariPaidOnline, [255, 165, 0]); // Orange
+        addSummaryRow('Total Expenses', totalExpenses, [255, 0, 0]); // Red
+        addSummaryRow('Total Cash Returns', cashReturns, [255, 0, 0]); // Red
+        summaryRows.push([{ content: 'Closing Balance (Cash in Hand)', styles: {fontStyle: 'bold'}}, { content: closingBalance.toFixed(2), styles: { fontStyle: 'bold', textColor: closingBalance >= 0 ? [0, 128, 0] : [255, 0, 0] } }]);
+
+
         autoTable(doc, {
             startY: finalY,
             head: [['Final Summary', 'Amount']],
-            body: [
-                ['Opening Balance', openingBalance.toFixed(2)],
-                ['Total Cash Sales', cashSales.toFixed(2)],
-                ['Total Online Sales', onlineSales.toFixed(2)],
-                ['Total Udhari Paid (Cash)', udhariPaidCash.toFixed(2)],
-                ['Total Udhari Paid (Online)', udhariPaidOnline.toFixed(2)],
-                ['Total Expenses', totalExpenses.toFixed(2)],
-                ['Total Cash Returns', cashReturns.toFixed(2)],
-                ['Closing Balance (Cash in Hand)', closingBalance.toFixed(2)],
-            ],
+            body: summaryRows,
             theme: 'grid',
-            headStyles: { fillColor: [41, 128, 185] },
+            headStyles: tableHeaderStyles,
         });
 
         return doc;
@@ -2291,3 +2314,5 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
+    

@@ -72,7 +72,8 @@ const smsReportFlow = ai.defineFlow(
         if (data.udhariDetails.length > 0) {
             body += '\nUdhari Given:\n';
             data.udhariDetails.forEach(udhari => {
-                body += `- ${udhari.customerName} (${udhari.amount.toFixed(2)}). New Bal: ${udhari.balance.toFixed(2)}\n`;
+                const oldBalance = udhari.balance - udhari.amount;
+                body += `- ${udhari.customerName} (${udhari.amount.toFixed(2)}). Bal: ${oldBalance.toFixed(2)} -> ${udhari.balance.toFixed(2)}\n`;
             });
         }
         
@@ -103,3 +104,5 @@ const smsReportFlow = ai.defineFlow(
         }
     }
 );
+
+    
