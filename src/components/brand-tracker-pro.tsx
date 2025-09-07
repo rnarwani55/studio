@@ -2268,11 +2268,11 @@ const drawSummaryWidgetsPdf = (doc: jsPDF, summaryData: Record<string, number>) 
     const totalWidth = pageWidth - (margin * 2);
     const widgetWidth = (totalWidth - (6 * 4)) / 7;
     let x = margin;
-    const y = 35;
+    const y = 40;
 
     widgets.forEach(widget => {
-        const value = summaryData[widget.key] || 0;
-        if (value !== 0 || widget.key === 'openingBalance' || widget.key === 'closingBalance') {
+        const value = summaryData[widget.key];
+        if (typeof value === 'number' && (value !== 0 || ['openingBalance', 'closingBalance'].includes(widget.key))) {
             doc.setDrawColor(226, 232, 240);
             doc.setLineWidth(0.5);
             doc.roundedRect(x, y, widgetWidth, 18, 2, 2, 'S');
@@ -2304,18 +2304,6 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     if (filterType === 'cash') reportTitle = `Cash Only Report for ${selectedDateForTitle}`;
     if (filterType === 'online') reportTitle = `Online Only Report for ${selectedDateForTitle}`;
 
-    const addHeader = (docInstance: jsPDF) => {
-        docInstance.setFont('helvetica', 'bold');
-        docInstance.setFontSize(20);
-        docInstance.text("MASTER OF BRANDS", 105, 15, { align: 'center' });
-        docInstance.setFont('helvetica', 'normal');
-        docInstance.setFontSize(12);
-        docInstance.text(reportTitle, 105, 22, { align: 'center' });
-        drawDateWidgetPdf(docInstance, appState.selectedDate);
-    };
-
-    addHeader(doc);
-    
     // Calculate summary data for widgets
     const cashSales = data.todaysEntries.filter(e => e.type === 'Cash').reduce((sum, e) => sum + e.amount, 0);
     const onlineSales = data.todaysEntries.filter(e => e.type === 'Online').reduce((sum, e) => sum + e.amount, 0);
@@ -2333,8 +2321,25 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         closingBalance: data.closingBalance
     };
 
-    let yPos = drawSummaryWidgetsPdf(doc, widgetSummary);
+    const drawFullHeader = (docInstance: jsPDF) => {
+        docInstance.setFont('helvetica', 'bold');
+        docInstance.setFontSize(20);
+        docInstance.text("MASTER OF BRANDS", 105, 22, { align: 'center' });
+        docInstance.setFont('helvetica', 'normal');
+        docInstance.setFontSize(12);
+        docInstance.text(reportTitle, 105, 29, { align: 'center' });
+        drawDateWidgetPdf(docInstance, appState.selectedDate);
+        drawSummaryWidgetsPdf(docInstance, widgetSummary);
+    };
 
+    const addPunchMark = (docInstance: jsPDF) => {
+        const pageHeight = docInstance.internal.pageSize.getHeight();
+        docInstance.setFillColor(200, 200, 200);
+        docInstance.circle(10, pageHeight / 2, 1.5, 'F');
+    };
+    
+    drawFullHeader(doc);
+    addPunchMark(doc);
 
     const mainHeadStyles = { fillColor: [41, 45, 50], textColor: [255, 255, 255], fontStyle: 'bold' };
     const headStyles = { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' };
@@ -2349,6 +2354,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     ];
 
     const allSummaries: Record<string, number> = {};
+    let yPos = 68;
 
     transactionCategories.forEach(cat => {
         const entries = data.todaysEntries.filter(e => cat.types!.includes(e.type));
@@ -2380,14 +2386,19 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
             }
             return [e.time, details, e.amount.toFixed(2)];
         });
-
+        
         autoTable(doc, {
             startY: yPos,
             head: [[{ content: cat.title, colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
             body: [[ 'Time', 'Details', 'Amount' ]],
             theme: 'grid',
             headStyles: headStyles,
-            columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } }
+            columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
+            didDrawPage: (hookData) => {
+                drawFullHeader(doc);
+                addPunchMark(doc);
+                hookData.settings.startY = 68;
+            }
         });
 
         autoTable(doc, {
@@ -2403,6 +2414,11 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
                     const value = parseFloat(String(data.cell.raw));
                     if (value < 0) data.cell.styles.textColor = [220, 38, 38];
                  }
+            },
+            didDrawPage: (hookData) => {
+                drawFullHeader(doc);
+                addPunchMark(doc);
+                hookData.settings.startY = 68;
             }
         });
         yPos = (doc as any).lastAutoTable.finalY + 10;
@@ -2421,13 +2437,23 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
             head: [[{ content: 'Daily Staff Report', colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
             body: [['Staff Name', 'Attendance', 'Payments Today']],
             theme: 'grid',
-            headStyles: headStyles
+            headStyles: headStyles,
+             didDrawPage: (hookData) => {
+                drawFullHeader(doc);
+                addPunchMark(doc);
+                hookData.settings.startY = 68;
+            }
         });
         autoTable(doc, {
             startY: (doc as any).lastAutoTable.finalY,
             body: staffBody,
             theme: 'grid',
             showHead: false,
+             didDrawPage: (hookData) => {
+                drawFullHeader(doc);
+                addPunchMark(doc);
+                hookData.settings.startY = 68;
+            }
         });
         yPos = (doc as any).lastAutoTable.finalY + 10;
     }
@@ -2464,6 +2490,11 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
                     hookData.row.cells[1].styles.fontStyle = 'bold';
                 }
             }
+        },
+         didDrawPage: (hookData) => {
+            drawFullHeader(doc);
+            addPunchMark(doc);
+            hookData.settings.startY = 68;
         }
     });
 
@@ -2538,3 +2569,6 @@ const PdfSummaryModal = ({ isOpen, onClose, appState, filterType }: { isOpen: bo
 
 
 
+
+
+    
