@@ -2093,9 +2093,10 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const cashReturns = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0); // is negative
     
     // Corrected cashflow and closing balance calculation
-    const closingBalance = appState.openingBalance + cashSales + totalExpenses + udhariPaidCash + cashReturns;
     const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
-    const totalCashIn = cashSales + udhariPaidCash;
+    
+    const todaysCashFlow = cashSales + totalExpenses + udhariPaidCash + cashReturns;
+    const closingBalance = appState.openingBalance + todaysCashFlow;
 
 
     return (
@@ -2124,18 +2125,6 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
             </CardContent>
             <CardFooter className="flex-col items-stretch p-4 mt-4 border-t bg-muted/40">
                 <div className="space-y-2 text-base">
-                    {appState.openingBalance > 0 && <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Opening Balance</span>
-                        <span className="font-semibold">{appState.openingBalance.toFixed(2)}</span>
-                    </div>}
-                    {totalCashIn > 0 && <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Total Cash In</span>
-                        <span className="font-semibold text-green-600">{totalCashIn.toFixed(2)}</span>
-                    </div>}
-                    {onlineSales > 0 && <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Total Online Sales</span>
-                        <span className="font-semibold text-blue-600">{onlineSales.toFixed(2)}</span>
-                    </div>}
                      {totalSales > 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Today's Sales Total</span>
                         <span className="font-semibold text-purple-600">{totalSales.toFixed(2)}</span>
@@ -2144,9 +2133,15 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                         <span className="text-muted-foreground">Today's Udhari Given</span>
                         <span className="font-semibold text-orange-500">{todaysUdhariGiven.toFixed(2)}</span>
                     </div>}
-                    {totalExpenses < 0 && <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Total Expenses</span>
-                        <span className="font-semibold text-red-600">{Math.abs(totalExpenses).toFixed(2)}</span>
+                    <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Today's Cash Flow</span>
+                        <span className={cn("font-semibold", todaysCashFlow >= 0 ? 'text-green-600' : 'text-red-600')}>
+                            {todaysCashFlow.toFixed(2)}
+                        </span>
+                    </div>
+                     {appState.openingBalance > 0 && <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Opening Balance</span>
+                        <span className="font-semibold">{appState.openingBalance.toFixed(2)}</span>
                     </div>}
                     <div className="flex justify-between items-center border-t pt-2 mt-2">
                         <span className="font-bold text-lg">Closing Balance (Cash in Hand)</span>
@@ -2154,6 +2149,11 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                           {closingBalance.toFixed(2)}
                         </span>
                     </div>
+                    {appState.openingBalance > 0 &&
+                        <div className="text-xs text-muted-foreground text-center pt-1">
+                            (Calculation: {todaysCashFlow.toFixed(2)} Today's Flow + {appState.openingBalance.toFixed(2)} Opening)
+                        </div>
+                    }
                 </div>
             </CardFooter>
         </Card>
@@ -2166,3 +2166,6 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     
 
 
+
+
+    
