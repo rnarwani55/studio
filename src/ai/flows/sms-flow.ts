@@ -15,7 +15,12 @@ const SmsReportDataSchema = z.object({
         cashReturn: z.number(),
         expenses: z.number(),
     }),
-    udhariDetails: z.array(z.object({
+    udhariGivenDetails: z.array(z.object({
+        customerName: z.string(),
+        amount: z.number(),
+        balance: z.number(),
+    })),
+    udhariPaidDetails: z.array(z.object({
         customerName: z.string(),
         amount: z.number(),
         balance: z.number(),
@@ -69,10 +74,18 @@ const smsReportFlow = ai.defineFlow(
             }
         });
 
-        if (data.udhariDetails.length > 0) {
+        if (data.udhariGivenDetails.length > 0) {
             body += '\nUdhari Given:\n';
-            data.udhariDetails.forEach(udhari => {
+            data.udhariGivenDetails.forEach(udhari => {
                 const oldBalance = udhari.balance - udhari.amount;
+                body += `- ${udhari.customerName} (${udhari.amount.toFixed(2)}). Bal: ${oldBalance.toFixed(2)} -> ${udhari.balance.toFixed(2)}\n`;
+            });
+        }
+        
+        if (data.udhariPaidDetails.length > 0) {
+            body += '\nUdhari Paid:\n';
+            data.udhariPaidDetails.forEach(udhari => {
+                const oldBalance = udhari.balance + udhari.amount;
                 body += `- ${udhari.customerName} (${udhari.amount.toFixed(2)}). Bal: ${oldBalance.toFixed(2)} -> ${udhari.balance.toFixed(2)}\n`;
             });
         }
@@ -104,5 +117,3 @@ const smsReportFlow = ai.defineFlow(
         }
     }
 );
-
-    

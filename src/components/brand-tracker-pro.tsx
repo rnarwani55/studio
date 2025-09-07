@@ -1989,14 +1989,14 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         const tableHeaderStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0] };
         const tableSubHeaderStyles = { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold' };
 
-        const transactionTypes: { title: string, type: Entry['type'] | Entry['type'][], positive: boolean }[] = [
-            { title: 'Cash Sales', type: 'Cash', positive: true },
-            { title: 'Online Sales', type: 'Online', positive: true },
-            { title: 'Udhari Paid', type: 'UDHARI PAID', positive: true },
-            { title: 'Udhari Given', type: 'UDHAR DIYE', positive: false },
-            { title: 'Expenses', type: 'Expense', positive: false },
-            { title: 'Cash Returns', type: 'Cash Return', positive: false },
-            { title: 'Credit Returns', type: 'Credit Return', positive: false },
+        const transactionTypes: { title: string, type: Entry['type'] | Entry['type'][] }[] = [
+            { title: 'Cash Sales', type: 'Cash' },
+            { title: 'Online Sales', type: 'Online' },
+            { title: 'Udhari Paid', type: 'UDHARI PAID' },
+            { title: 'Udhari Given', type: 'UDHAR DIYE' },
+            { title: 'Expenses', type: 'Expense'},
+            { title: 'Cash Returns', type: 'Cash Return' },
+            { title: 'Credit Returns', type: 'Credit Return' },
         ];
         
         const summaryData: Record<string, number> = {};
@@ -2006,15 +2006,17 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                 .filter(e => Array.isArray(tt.type) ? tt.type.includes(e.type) : e.type === tt.type)
                 .map(e => {
                     let details = e.details;
-                    if(e.type === 'UDHAR DIYE') {
-                        const match = e.details.match(/(.*) - Desc:/);
-                        const customerName = match ? match[1].trim() : e.details.trim();
-                        const creditor = appState.creditors.find(c => c.name === customerName);
-                        if (creditor) {
-                            const newBalance = calculateBalance(creditor.transactions);
-                            const oldBalance = newBalance - e.amount;
-                            details = `${customerName}\n(${oldBalance.toFixed(2)} old + ${e.amount.toFixed(2)} today) = ${newBalance.toFixed(2)}`
-                        }
+                    if (e.type === 'UDHAR DIYE' || e.type === 'UDHARI PAID') {
+                       const match = e.details.match(/(?:From: )?(.*?) (?:- Desc:| \((?:Cash|Online)\))/);
+                       const customerName = match ? match[1].trim() : e.details.trim();
+                       const creditor = appState.creditors.find(c => c.name === customerName);
+                       if(creditor) {
+                          const newBalance = calculateBalance(creditor.transactions);
+                          const oldBalance = e.type === 'UDHAR DIYE' 
+                              ? newBalance - e.amount
+                              : newBalance + e.amount;
+                          details = `${customerName}\n(${oldBalance.toFixed(2)} old ${e.type === 'UDHAR DIYE' ? '+' : '-'} ${Math.abs(e.amount).toFixed(2)}) = ${newBalance.toFixed(2)}`
+                       }
                     }
                     return [e.time, details, e.amount.toFixed(2)]
                 });
@@ -2128,8 +2130,20 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
             const cashReturn = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
             const expenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0);
 
-            const udhariDetails = entries.filter(e => e.type === 'UDHAR DIYE').map(entry => {
+            const udhariGivenDetails = entries.filter(e => e.type === 'UDHAR DIYE').map(entry => {
                 const match = entry.details.match(/(.*) - Desc:/);
+                const customerName = match ? match[1].trim() : entry.details.trim();
+                const creditor = appState.creditors.find(c => c.name === customerName);
+                const balance = creditor ? calculateBalance(creditor.transactions) : 0;
+                return {
+                    customerName,
+                    amount: entry.amount,
+                    balance,
+                };
+            });
+            
+            const udhariPaidDetails = entries.filter(e => e.type === 'UDHARI PAID').map(entry => {
+                const match = entry.details.match(/From: (.*?) \(/);
                 const customerName = match ? match[1].trim() : entry.details.trim();
                 const creditor = appState.creditors.find(c => c.name === customerName);
                 const balance = creditor ? calculateBalance(creditor.transactions) : 0;
@@ -2155,7 +2169,8 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     cashReturn,
                     expenses
                 },
-                udhariDetails,
+                udhariGivenDetails,
+                udhariPaidDetails,
                 staffDetails,
             };
 
@@ -2314,5 +2329,3 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
-
-    
