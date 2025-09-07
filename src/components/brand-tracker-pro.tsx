@@ -2266,30 +2266,44 @@ const drawSummaryWidgetsPdf = (doc: jsPDF, summaryData: Record<string, number>) 
     const pageWidth = doc.internal.pageSize.getWidth();
     const margin = 14;
     const totalWidth = pageWidth - (margin * 2);
-    const widgetWidth = (totalWidth - (6 * 4)) / 7;
+    let widgetsToDraw = widgets.filter(widget => {
+        const value = summaryData[widget.key];
+        return typeof value === 'number' && (value !== 0 || ['openingBalance', 'closingBalance'].includes(widget.key));
+    });
+
+    if (widgetsToDraw.length === 0) return 40;
+
+    const gap = 4;
+    const widgetWidth = (totalWidth - (widgetsToDraw.length - 1) * gap) / widgetsToDraw.length;
     let x = margin;
     const y = 40;
 
-    widgets.forEach(widget => {
+    widgetsToDraw.forEach((widget, index) => {
         const value = summaryData[widget.key];
-        if (typeof value === 'number' && (value !== 0 || ['openingBalance', 'closingBalance'].includes(widget.key))) {
-            doc.setDrawColor(226, 232, 240);
-            doc.setLineWidth(0.5);
-            doc.roundedRect(x, y, widgetWidth, 18, 2, 2, 'S');
-            
-            doc.setFontSize(8);
-            doc.setTextColor(100, 116, 139);
-            doc.text(widget.label, x + widgetWidth / 2, y + 5, { align: 'center' });
+        
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.5);
+        doc.roundedRect(x, y, widgetWidth, 18, 2, 2, 'S');
+        
+        doc.setFontSize(8);
+        doc.setTextColor(100, 116, 139);
+        doc.text(widget.label, x + widgetWidth / 2, y + 5, { align: 'center' });
 
-            doc.setFontSize(11);
-            doc.setFont('helvetica', 'bold');
-            doc.setTextColor(widget.color[0], widget.color[1], widget.color[2]);
-            doc.text(Math.abs(value).toFixed(2), x + widgetWidth / 2, y + 13, { align: 'center' });
-            doc.setFont('helvetica', 'normal');
-            
-            x += widgetWidth + 4;
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(widget.color[0], widget.color[1], widget.color[2]);
+        doc.text(Math.abs(value).toFixed(2), x + widgetWidth / 2, y + 13, { align: 'center' });
+        doc.setFont('helvetica', 'normal');
+        
+        if (index < widgetsToDraw.length - 1) {
+            doc.setDrawColor(241, 245, 249); // Very light grey
+            doc.setLineWidth(0.5);
+            doc.line(x + widgetWidth + gap / 2, y, x + widgetWidth + gap / 2, y + 18);
         }
+
+        x += widgetWidth + gap;
     });
+
     return y + 18 + 10;
 };
 
@@ -2299,7 +2313,6 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     const data = getReportData(appState, filterType);
     const selectedDate = parse(appState.selectedDate, 'yyyy-MM-dd', new Date());
     const selectedDateForTitle = format(selectedDate, 'dd/MM/yyyy');
-    const Y_START_POSITION = 70;
     
     let reportTitle = `Financial Report for ${selectedDateForTitle}`;
     if (filterType === 'cash') reportTitle = `Cash Only Report for ${selectedDateForTitle}`;
@@ -2321,6 +2334,8 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         expenses,
         closingBalance: data.closingBalance
     };
+
+    const Y_START_POSITION = drawSummaryWidgetsPdf(doc, widgetSummary) + 10;
 
     const drawFullHeader = (docInstance: jsPDF) => {
         docInstance.setFont('helvetica', 'bold');
@@ -2352,6 +2367,10 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
       theme: 'grid',
       headStyles: headStyles,
       footStyles: footStyles,
+      styles: {
+          lineColor: [241, 245, 249], // very light grey for grid lines
+          lineWidth: 0.1,
+      },
       columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
       didParseCell: (data: any) => {
           if (data.column.index === 2 && data.cell.raw) {
@@ -2373,14 +2392,15 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     ];
 
     const allSummaries: Record<string, number> = {};
-    let lastFinalY = Y_START_POSITION;
+    let lastFinalY: number | undefined = undefined;
 
     const drawTable = (title: string, body: any[][], total: number) => {
         const tableHasContent = body.length > 0;
+        if (!tableHasContent) return;
         
         autoTable(doc, {
             ...tableOptions,
-            startY: lastFinalY,
+            startY: lastFinalY ? lastFinalY + 5 : Y_START_POSITION, // Add margin between tables
             head: [[{ content: title, colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
             body: tableHasContent ? [[ 'Time', 'Details', 'Amount' ]] : [],
         });
@@ -2396,11 +2416,8 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
           });
           lastFinalY = (doc as any).lastAutoTable.finalY;
         }
-
-        lastFinalY += 5; // Add margin between tables
     };
 
-    // Draw initial header before loop
     pageDrawHook({} as any);
 
     transactionCategories.forEach(cat => {
@@ -2447,7 +2464,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         });
         autoTable(doc, {
             ...tableOptions,
-            startY: lastFinalY,
+            startY: lastFinalY ? lastFinalY + 5 : Y_START_POSITION,
             head: [[{ content: 'Daily Staff Report', colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
             body: [['Staff Name', 'Attendance', 'Payments Today']],
         });
@@ -2459,19 +2476,19 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
             body: staffBody,
             showHead: false,
         });
-        lastFinalY = (doc as any).lastAutoTable.finalY + 5;
+        lastFinalY = (doc as any).lastAutoTable.finalY;
     }
 
 
     // Final Summary
     const summaryRows = [
-      ['Opening Balance', data.openingBalance, [0, 0, 0]],
-      ['Cash Sales', allSummaries['Cash Sales'], [34, 197, 94]],
-      ['Online Sales', allSummaries['Online Sales'], [59, 130, 246]],
-      ['Udhari Paid', allSummaries['Udhari Paid'], [234, 179, 8]],
-      ['Udhari Given', allSummaries['Udhari Given'], [249, 115, 22]],
-      ['Expenses & Returns', allSummaries['Expenses & Returns'], [220, 38, 38]],
-      ['Closing Balance', data.closingBalance, [22, 163, 74]],
+      ['Opening Balance', widgetSummary.openingBalance, [0, 0, 0]],
+      ['Cash Sales', widgetSummary.cashSales, [22, 163, 74]],
+      ['Online Sales', widgetSummary.onlineSales, [37, 99, 235]],
+      ['Udhari Paid', widgetSummary.udhariPaid, [202, 138, 4]],
+      ['Udhari Given', widgetSummary.udhariGiven, [234, 88, 12]],
+      ['Expenses & Returns', widgetSummary.expenses, [220, 38, 38]],
+      ['Closing Balance', widgetSummary.closingBalance, [22, 163, 74]],
     ];
 
     const finalSummaryBody = summaryRows
@@ -2480,14 +2497,15 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
 
     autoTable(doc, {
         ...tableOptions,
-        startY: lastFinalY,
+        startY: lastFinalY ? lastFinalY + 5 : Y_START_POSITION,
         head: [[{ content: 'Final Summary', colSpan: 2, styles: { ...mainHeadStyles, halign: 'center' } }]],
         body: finalSummaryBody,
         headStyles: { ...headStyles, halign: 'center' },
         didParseCell: (hookData) => {
+            if (hookData.section !== 'body') return;
             const rowLabel = hookData.row.raw[0] as string;
             const rowStyle = summaryRows.find(r => r[0] === rowLabel);
-            if (hookData.section === 'body' && rowStyle) {
+            if (rowStyle) {
                 hookData.cell.styles.textColor = rowStyle[2] as [number, number, number];
                 if (rowLabel === 'Closing Balance' || rowLabel === 'Opening Balance') {
                     hookData.row.cells[0].styles.fontStyle = 'bold';
@@ -2572,5 +2590,7 @@ const PdfSummaryModal = ({ isOpen, onClose, appState, filterType }: { isOpen: bo
 
     
 
+
+    
 
     
