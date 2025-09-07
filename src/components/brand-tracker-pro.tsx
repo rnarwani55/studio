@@ -2276,23 +2276,21 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     addHeader(doc);
     let yPos = 45;
 
-    const headStyles = { fillColor: [41, 45, 50], textColor: [255, 255, 255] };
+    const mainHeadStyles = { fillColor: [41, 45, 50], textColor: [255, 255, 255], fontStyle: 'bold' };
+    const headStyles = { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' };
 
     const transactionCategories = [
-        { title: 'Cash Sales', type: 'Cash', positive: true },
-        { title: 'Online Sales', type: 'Online', positive: true },
-        { title: 'Udhari Paid', type: 'UDHARI PAID', positive: true },
-        { title: 'Udhari Given', type: 'UDHAR DIYE', positive: true },
+        { title: 'Cash Sales', types: ['Cash'], positive: true },
+        { title: 'Online Sales', types: ['Online'], positive: true },
+        { title: 'Udhari Paid', types: ['UDHARI PAID'], positive: true },
+        { title: 'Udhari Given', types: ['UDHAR DIYE'], positive: true },
         { title: 'Expenses & Returns', types: ['Expense', 'Cash Return', 'Credit Return'], positive: false },
     ];
 
     const allSummaries: Record<string, number> = {};
 
     transactionCategories.forEach(cat => {
-        const entries = cat.types
-            ? data.todaysEntries.filter(e => cat.types!.includes(e.type))
-            : data.todaysEntries.filter(e => e.type === cat.type);
-
+        const entries = data.todaysEntries.filter(e => cat.types!.includes(e.type));
         if (entries.length === 0) return;
 
         const total = entries.reduce((sum, e) => sum + e.amount, 0);
@@ -2316,7 +2314,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
                 if(creditor) {
                     const currentBalance = calculateBalance(creditor.transactions);
                     const oldBalance = currentBalance + e.amount;
-                    details = `${customerName} (Old: ${oldBalance.toFixed(2)} - Paid: ${e.amount.toFixed(2)} = ${currentBalance.toFixed(2)})`;
+                    details = `${customerName} (Paid: ${e.amount.toFixed(2)} -> Old: ${oldBalance.toFixed(2)}, New: ${currentBalance.toFixed(2)})`;
                 }
             }
             return [e.time, details, e.amount.toFixed(2)];
@@ -2324,10 +2322,10 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
 
         autoTable(doc, {
             startY: yPos,
-            head: [[{ content: cat.title, colSpan: 3, styles: { halign: 'center', fontStyle: 'bold' } }]],
+            head: [[{ content: cat.title, colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
             body: [[ 'Time', 'Details', 'Amount' ]],
             theme: 'grid',
-            headStyles,
+            headStyles: headStyles,
             columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } }
         });
 
@@ -2341,7 +2339,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
             didParseCell: (data) => {
                  if (data.column.index === 2 && data.cell.raw) {
                     const value = parseFloat(String(data.cell.raw));
-                    if (value < 0) data.cell.styles.textColor = [255, 0, 0];
+                    if (value < 0) data.cell.styles.textColor = [220, 38, 38];
                  }
             }
         });
@@ -2349,46 +2347,60 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     });
     
     // Staff Report
-    if (data.staff.length > 0) {
+    if (data.staff.length > 0 && filterType === 'all') {
         const staffBody = data.staff.map(s => {
-            const status = s.absences.includes(data.selectedDate) ? 'Absent' : 'Present';
-            const payment = s.payments.find(p => p.date === data.selectedDate);
+            const status = (s.absences || []).includes(data.selectedDate) ? 'Absent' : 'Present';
+            const payment = (s.payments || []).find(p => p.date === data.selectedDate);
             const paymentInfo = payment ? `${payment.description}: ${payment.amount.toFixed(2)}` : 'No Payment';
             return [s.name, status, paymentInfo];
         });
         autoTable(doc, {
             startY: yPos,
-            head: [['Staff Name', 'Attendance', 'Payments Today']],
+            head: [[{ content: 'Daily Staff Report', colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
+            body: [['Staff Name', 'Attendance', 'Payments Today']],
+            theme: 'grid',
+            headStyles: headStyles
+        });
+        autoTable(doc, {
+            startY: (doc as any).lastAutoTable.finalY,
             body: staffBody,
             theme: 'grid',
-            headStyles
+            showHead: false,
         });
         yPos = (doc as any).lastAutoTable.finalY + 10;
     }
 
 
     // Final Summary
+    const summaryRows = [
+      ['Opening Balance', data.openingBalance, [0, 0, 0]],
+      ['Cash Sales', allSummaries['Cash Sales'], [34, 197, 94]],
+      ['Online Sales', allSummaries['Online Sales'], [59, 130, 246]],
+      ['Udhari Paid', allSummaries['Udhari Paid'], [234, 179, 8]],
+      ['Udhari Given', allSummaries['Udhari Given'], [249, 115, 22]],
+      ['Expenses & Returns', allSummaries['Expenses & Returns'], [220, 38, 38]],
+      ['Closing Balance', data.closingBalance, [22, 163, 74]],
+    ];
+
+    const finalSummaryBody = summaryRows
+      .filter(([label, amount]) => typeof amount === 'number' && amount !== 0 || label === 'Opening Balance' || label === 'Closing Balance')
+      .map(([label, amount]) => [label, (amount as number).toFixed(2)]);
+
     autoTable(doc, {
         startY: yPos,
-        head: [[{ content: 'Final Summary', colSpan: 2, styles: { halign: 'center', fontStyle: 'bold' } }]],
-        body: [
-            ['Opening Balance', data.openingBalance.toFixed(2)],
-            ...Object.entries(allSummaries).map(([title, amount]) => [title, amount.toFixed(2)]),
-            ['Closing Balance', data.closingBalance.toFixed(2)]
-        ],
+        head: [[{ content: 'Final Summary', colSpan: 2, styles: { ...mainHeadStyles, halign: 'center' } }]],
+        body: finalSummaryBody,
         theme: 'grid',
-        headStyles,
-        didParseCell: (data) => {
-            if(data.row.index > 0 && data.row.index <= Object.keys(allSummaries).length){
-                const title = data.row.raw[0] as string;
-                const amount = parseFloat(data.row.raw[1] as string);
-                if (title.includes('Expenses') || title.includes('Return') || amount < 0) {
-                    data.cell.styles.textColor = [220, 38, 38]; // red-600
+        headStyles: headStyles,
+        didParseCell: (hookData) => {
+            const rowLabel = hookData.row.raw[0] as string;
+            const rowStyle = summaryRows.find(r => r[0] === rowLabel);
+            if (hookData.section === 'body' && rowStyle) {
+                hookData.cell.styles.textColor = rowStyle[2] as [number, number, number];
+                if (rowLabel === 'Closing Balance') {
+                    hookData.row.cells[0].styles.fontStyle = 'bold';
+                    hookData.row.cells[1].styles.fontStyle = 'bold';
                 }
-            }
-            if (data.row.index === Object.keys(allSummaries).length + 1) { // Closing Balance
-                data.row.cells[0].styles.fontStyle = 'bold';
-                data.row.cells[1].styles.fontStyle = 'bold';
             }
         }
     });
@@ -2460,4 +2472,5 @@ const PdfSummaryModal = ({ isOpen, onClose, appState, filterType }: { isOpen: bo
     );
 };
     
+
 
