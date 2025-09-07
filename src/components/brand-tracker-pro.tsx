@@ -2218,6 +2218,9 @@ const getReportData = (appState: AppState, filterType: 'all' | 'cash' | 'online'
         todaysEntries,
         openingBalance: appState.openingBalance,
         closingBalance,
+        staff: appState.staff,
+        creditors: appState.creditors,
+        selectedDate: appState.selectedDate,
     };
 };
 
@@ -2232,16 +2235,14 @@ const drawDateWidgetPdf = (doc: jsPDF, dateStr: string) => {
     const date = format(selectedDate, 'd');
     const month = format(selectedDate, 'MMMM');
 
-    // Red banner for the day of the week
-    doc.setFillColor(239, 68, 68); // Tailwind red-500
+    doc.setFillColor(239, 68, 68); 
     doc.roundedRect(x, y, widgetWidth, 8, 2, 2, 'F');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(10);
     doc.setTextColor(255, 255, 255);
     doc.text(day, x + widgetWidth / 2, y + 5.5, { align: 'center' });
 
-    // White box for the date and month
-    doc.setDrawColor(209, 213, 219); // Tailwind gray-300
+    doc.setDrawColor(209, 213, 219); 
     doc.roundedRect(x, y, widgetWidth, 25, 2, 2, 'S');
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(22);
@@ -2250,7 +2251,7 @@ const drawDateWidgetPdf = (doc: jsPDF, dateStr: string) => {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(9);
     doc.text(month, x + widgetWidth / 2, y + 22, { align: 'center' });
-}
+};
 
 const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' = 'all') => {
     const doc = new jsPDF();
@@ -2271,30 +2272,125 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         docInstance.text(reportTitle, 105, 22, { align: 'center' });
         drawDateWidgetPdf(docInstance, appState.selectedDate);
     };
-    
-    addHeader(doc);
-    
-    const body = data.todaysEntries.map(e => [e.time, e.type, e.details, e.amount.toFixed(2)]);
-    const total = data.todaysEntries.reduce((sum, e) => sum + e.amount, 0);
-    const footer = [[{ content: 'Total', colSpan: 3, styles: { halign: 'right', fontStyle: 'bold' } }, { content: total.toFixed(2), styles: { halign: 'right', fontStyle: 'bold' } }]];
 
-    autoTable(doc, {
-        startY: 45,
-        head: [['Time', 'Type', 'Details', 'Amount']],
-        body: body,
-        foot: footer,
-        theme: 'grid',
-        headStyles: { fillColor: [75, 85, 99] },
-        footStyles: { fillColor: [224, 224, 224] },
-        didParseCell: (data) => {
-            if (data.column.dataKey === 3 && typeof data.cell.raw === 'string') {
-                if (parseFloat(data.cell.raw) < 0) {
-                    data.cell.styles.textColor = [255, 0, 0];
+    addHeader(doc);
+    let yPos = 45;
+
+    const headStyles = { fillColor: [41, 45, 50], textColor: [255, 255, 255] };
+
+    const transactionCategories = [
+        { title: 'Cash Sales', type: 'Cash', positive: true },
+        { title: 'Online Sales', type: 'Online', positive: true },
+        { title: 'Udhari Paid', type: 'UDHARI PAID', positive: true },
+        { title: 'Udhari Given', type: 'UDHAR DIYE', positive: true },
+        { title: 'Expenses & Returns', types: ['Expense', 'Cash Return', 'Credit Return'], positive: false },
+    ];
+
+    const allSummaries: Record<string, number> = {};
+
+    transactionCategories.forEach(cat => {
+        const entries = cat.types
+            ? data.todaysEntries.filter(e => cat.types!.includes(e.type))
+            : data.todaysEntries.filter(e => e.type === cat.type);
+
+        if (entries.length === 0) return;
+
+        const total = entries.reduce((sum, e) => sum + e.amount, 0);
+        allSummaries[cat.title] = total;
+
+        const body = entries.map(e => {
+            let details = e.details;
+            if (e.type === 'UDHAR DIYE') {
+                const match = e.details.match(/(.*) - Desc:/);
+                const customerName = match ? match[1].trim() : e.details.trim();
+                const creditor = data.creditors.find(c => c.name === customerName);
+                if (creditor) {
+                    const currentBalance = calculateBalance(creditor.transactions);
+                    const oldBalance = currentBalance - e.amount;
+                    details = `${customerName} (Old: ${oldBalance.toFixed(2)} + New: ${e.amount.toFixed(2)} = ${currentBalance.toFixed(2)})`;
+                }
+            } else if (e.type === 'UDHARI PAID') {
+                const match = e.details.match(/From: (.*?) \(/);
+                const customerName = match ? match[1].trim() : e.details.trim();
+                 const creditor = data.creditors.find(c => c.name === customerName);
+                if(creditor) {
+                    const currentBalance = calculateBalance(creditor.transactions);
+                    const oldBalance = currentBalance + e.amount;
+                    details = `${customerName} (Old: ${oldBalance.toFixed(2)} - Paid: ${e.amount.toFixed(2)} = ${currentBalance.toFixed(2)})`;
                 }
             }
-        },
-        didDrawPage: (data) => addHeader(doc),
-        margin: { top: 40 }
+            return [e.time, details, e.amount.toFixed(2)];
+        });
+
+        autoTable(doc, {
+            startY: yPos,
+            head: [[{ content: cat.title, colSpan: 3, styles: { halign: 'center', fontStyle: 'bold' } }]],
+            body: [[ 'Time', 'Details', 'Amount' ]],
+            theme: 'grid',
+            headStyles,
+            columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } }
+        });
+
+        autoTable(doc, {
+            startY: (doc as any).lastAutoTable.finalY,
+            body: body,
+            foot: [[{ content: 'Total', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } }, { content: total.toFixed(2), styles: { halign: 'right', fontStyle: 'bold' } }]],
+            theme: 'grid',
+            showHead: false,
+            columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
+            didParseCell: (data) => {
+                 if (data.column.index === 2 && data.cell.raw) {
+                    const value = parseFloat(String(data.cell.raw));
+                    if (value < 0) data.cell.styles.textColor = [255, 0, 0];
+                 }
+            }
+        });
+        yPos = (doc as any).lastAutoTable.finalY + 10;
+    });
+    
+    // Staff Report
+    if (data.staff.length > 0) {
+        const staffBody = data.staff.map(s => {
+            const status = s.absences.includes(data.selectedDate) ? 'Absent' : 'Present';
+            const payment = s.payments.find(p => p.date === data.selectedDate);
+            const paymentInfo = payment ? `${payment.description}: ${payment.amount.toFixed(2)}` : 'No Payment';
+            return [s.name, status, paymentInfo];
+        });
+        autoTable(doc, {
+            startY: yPos,
+            head: [['Staff Name', 'Attendance', 'Payments Today']],
+            body: staffBody,
+            theme: 'grid',
+            headStyles
+        });
+        yPos = (doc as any).lastAutoTable.finalY + 10;
+    }
+
+
+    // Final Summary
+    autoTable(doc, {
+        startY: yPos,
+        head: [[{ content: 'Final Summary', colSpan: 2, styles: { halign: 'center', fontStyle: 'bold' } }]],
+        body: [
+            ['Opening Balance', data.openingBalance.toFixed(2)],
+            ...Object.entries(allSummaries).map(([title, amount]) => [title, amount.toFixed(2)]),
+            ['Closing Balance', data.closingBalance.toFixed(2)]
+        ],
+        theme: 'grid',
+        headStyles,
+        didParseCell: (data) => {
+            if(data.row.index > 0 && data.row.index <= Object.keys(allSummaries).length){
+                const title = data.row.raw[0] as string;
+                const amount = parseFloat(data.row.raw[1] as string);
+                if (title.includes('Expenses') || title.includes('Return') || amount < 0) {
+                    data.cell.styles.textColor = [220, 38, 38]; // red-600
+                }
+            }
+            if (data.row.index === Object.keys(allSummaries).length + 1) { // Closing Balance
+                data.row.cells[0].styles.fontStyle = 'bold';
+                data.row.cells[1].styles.fontStyle = 'bold';
+            }
+        }
     });
 
     doc.save(`Report-MOB-${filterType}-${appState.selectedDate}.pdf`);
@@ -2364,3 +2460,4 @@ const PdfSummaryModal = ({ isOpen, onClose, appState, filterType }: { isOpen: bo
     );
 };
     
+
