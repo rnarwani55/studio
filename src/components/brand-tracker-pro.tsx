@@ -29,6 +29,7 @@ import {
   BookOpen,
   ShieldAlert,
   Mail,
+  MessageSquare,
 } from "lucide-react";
 import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, differenceInDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -89,6 +90,7 @@ import type { Entry, StaffMember, Creditor, AppState, StaffPayment, CreditorTran
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
+import { sendSmsReport, SmsReportData } from '@/ai/flows/sms-flow';
 
 
 const LSK = "mob_data_v13";
@@ -2093,6 +2095,62 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         toast({ title: "Coming Soon!", description: "Email functionality will be implemented in a future update." });
     }
 
+    const handleSmsReport = async () => {
+        toast({ title: "Sending SMS...", description: "Please wait while we generate and send the report." });
+        try {
+            const cashSales = entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0);
+            const onlineSales = entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0);
+            const udhariPaid = entries.filter(e => e.type === 'UDHARI PAID').reduce((s, e) => s + e.amount, 0);
+            const udhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
+            const cashReturn = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
+            const expenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0);
+
+            const udhariDetails = entries.filter(e => e.type === 'UDHAR DIYE').map(entry => {
+                const match = entry.details.match(/(.*) - Desc:/);
+                const customerName = match ? match[1].trim() : entry.details.trim();
+                const creditor = appState.creditors.find(c => c.name === customerName);
+                const balance = creditor ? calculateBalance(creditor.transactions) : 0;
+                return {
+                    customerName,
+                    amount: entry.amount,
+                    balance,
+                };
+            });
+
+            const staffDetails = appState.staff.map(s => ({
+                name: s.name,
+                status: (s.absences || []).includes(appState.selectedDate) ? 'Absent' : 'Present'
+            }));
+
+            const reportData: SmsReportData = {
+                date: appState.selectedDate,
+                summaries: {
+                    cashSales,
+                    onlineSales,
+                    udhariPaid,
+                    udhariGiven,
+                    cashReturn,
+                    expenses
+                },
+                udhariDetails,
+                staffDetails,
+            };
+
+            const result = await sendSmsReport(reportData);
+
+            if (result.success) {
+                toast({ title: "SMS Sent Successfully", description: "The daily report has been sent." });
+            } else {
+                throw new Error(result.error || "Unknown error sending SMS");
+            }
+
+        } catch (error: any) {
+            console.error("SMS sending failed:", error);
+            toast({ title: "Error Sending SMS", description: error.message || "Failed to send SMS report.", variant: "destructive" });
+        }
+    };
+
+
     const TransactionTable = ({ title, data, onEdit, onDelete }: { title: string, data: Entry[], onEdit: (entry: Entry) => void, onDelete: (entry: Entry) => void }) => {
         const total = data.reduce((sum, entry) => sum + entry.amount, 0);
 
@@ -2179,6 +2237,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     <div className="flex flex-wrap gap-2">
                        <Button onClick={handleExportPdf} variant="destructive">Full Report PDF</Button>
                        <Button onClick={handleEmailReport} className="bg-blue-700 hover:bg-blue-800"><Mail className="mr-2 h-4 w-4" />Email Report</Button>
+                       <Button onClick={handleSmsReport} className="bg-green-600 hover:bg-green-700"><MessageSquare className="mr-2 h-4 w-4" />SMS Report</Button>
                    </div>
                 </div>
             </CardHeader>
@@ -2224,7 +2283,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     </div>
                     {appState.openingBalance > 0 &&
                         <div className="text-xs text-muted-foreground text-center pt-1">
-                            (Calculation: {appState.openingBalance.toFixed(2)} Opening + {todaysCashFlow.toFixed(2)} Today's Flow)
+                            (Calculation: {todaysCashFlow.toFixed(2)} Today's Flow + {appState.openingBalance.toFixed(2)} Opening Balance)
                         </div>
                     }
                 </div>
@@ -2232,4 +2291,3 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
-
