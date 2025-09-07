@@ -28,6 +28,7 @@ import {
   Import,
   BookOpen,
   ShieldAlert,
+  Mail,
 } from "lucide-react";
 import { format, parse, isValid, startOfMonth, endOfMonth, eachDayOfInterval, isSameMonth, differenceInDays } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
@@ -133,7 +134,6 @@ export default function BrandTrackerPro() {
     const totalUdhariPaid = udhariPaidCash + udhariPaidOnline;
     const totalExpenses = Math.abs(expenses);
 
-    // Corrected cash in hand calculation
     const todaysCash = opening + cashSales + udhariPaidCash + expenses + cashReturn;
 
     return {
@@ -1974,61 +1974,125 @@ const DeletionLogTab = ({ log }: { log: DeletionRecord[] }) => {
 const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry[], appState: AppState, onEdit: (entry: Entry) => void, onDelete: (entry: Entry) => void }) => {
     const { toast } = useToast();
 
-    const exportFullReportPdf = () => {
+    const generatePdf = () => {
         const doc = new jsPDF();
         const selectedDateFmt = format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP");
+        
         doc.setFontSize(20);
         doc.text("MASTER OF BRANDS", 105, 15, { align: 'center' });
         doc.setFontSize(12);
         doc.text(`Daily Report: ${selectedDateFmt}`, 105, 22, { align: 'center' });
-
-        // Summary Data
-        const analyticsData = {
-            opening: appState.openingBalance,
-            cashSales: entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0),
-            onlineSales: entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0),
-            udhariPaid: entries.filter(e => e.type === 'UDHARI PAID').reduce((s, e) => s + e.amount, 0),
-            totalExpenses: Math.abs(entries.filter(e => e.type === 'Expense').reduce((s_1, e) => s_1 + e.amount, 0)),
-        };
         
-        const cashReturn = entries.filter(e => e.type === 'Cash Return').reduce((s_2, e) => s_2 + e.amount, 0);
-        const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s_3, e) => s_3 + e.amount, 0);
+        let finalY = 30;
 
-        const totalInHand = analyticsData.opening + analyticsData.cashSales + udhariPaidCash + cashReturn + entries.filter(e => e.type === 'Expense').reduce((s_4, e) => s_4 + e.amount, 0);
+        const transactionTypes: { title: string, type: Entry['type'] | Entry['type'][] }[] = [
+            { title: 'Cash Sales', type: 'Cash' },
+            { title: 'Online Sales', type: 'Online' },
+            { title: 'Udhari Given', type: 'UDHAR DIYE' },
+            { title: 'Udhari Paid', type: 'UDHARI PAID' },
+            { title: 'Expenses', type: 'Expense' },
+            { title: 'Cash Returns', type: 'Cash Return' },
+            { title: 'Credit Returns', type: 'Credit Return' },
+        ];
+        
+        const summaryData: Record<string, number> = {};
+
+        transactionTypes.forEach(tt => {
+            const data = entries
+                .filter(e => Array.isArray(tt.type) ? tt.type.includes(e.type) : e.type === tt.type)
+                .map(e => [e.time, e.details, e.amount.toFixed(2)]);
+            
+            const total = data.reduce((sum, row) => sum + parseFloat(row[2]), 0);
+            summaryData[tt.title] = total;
+
+            if (data.length > 0) {
+                 autoTable(doc, {
+                    startY: finalY,
+                    head: [[{ content: tt.title, colSpan: 3, styles: { halign: 'center', fillColor: [22, 160, 133] } }]],
+                    body: [
+                      ['Time', 'Details', 'Amount'],
+                      ...data,
+                      [{ content: 'Total', styles: { halign: 'right', fontStyle: 'bold' } }, '', { content: total.toFixed(2), styles: { fontStyle: 'bold' } }]
+                    ],
+                    theme: 'grid',
+                    headStyles: { fillColor: [41, 128, 185] },
+                    didDrawPage: (data) => { finalY = data.cursor?.y || 30; }
+                });
+                finalY = (doc as any).lastAutoTable.finalY + 10;
+            }
+        });
+        
+        // Staff Report
+        if (appState.staff.length > 0) {
+            const staffReportBody = appState.staff.map(s => {
+                const isAbsent = (s.absences || []).includes(appState.selectedDate);
+                const paymentToday = (s.payments || []).find(p => p.date === appState.selectedDate);
+                return [
+                    s.name,
+                    isAbsent ? 'Absent' : 'Present',
+                    paymentToday ? `${paymentToday.amount.toFixed(2)} (${paymentToday.description})` : '-'
+                ];
+            });
+
+            autoTable(doc, {
+                startY: finalY,
+                head: [[{ content: 'Staff Attendance & Payments', colSpan: 3, styles: { halign: 'center', fillColor: [22, 160, 133] } }]],
+                body: [
+                    ['Name', 'Status', 'Payment Today'],
+                    ...staffReportBody
+                ],
+                theme: 'grid',
+                headStyles: { fillColor: [41, 128, 185] },
+                didDrawPage: (data) => { finalY = data.cursor?.y || 30; }
+            });
+            finalY = (doc as any).lastAutoTable.finalY + 10;
+        }
+
+        // Final Summary
+        const cashSales = summaryData['Cash Sales'] || 0;
+        const onlineSales = summaryData['Online Sales'] || 0;
+        const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
+        const udhariPaidOnline = entries.filter(e => e.type === 'UDHARI PAID' && e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
+        const totalExpenses = summaryData['Expenses'] || 0;
+        const cashReturns = summaryData['Cash Returns'] || 0;
+        const openingBalance = appState.openingBalance;
+        const closingBalance = openingBalance + cashSales + udhariPaidCash + totalExpenses + cashReturns;
 
         autoTable(doc, {
-            startY: 30,
-            head: [['Description', 'Amount']],
+            startY: finalY,
+            head: [['Final Summary', 'Amount']],
             body: [
-                ['Opening Balance', analyticsData.opening.toFixed(2)],
-                ['Cash Sales', analyticsData.cashSales.toFixed(2)],
-                ['Udhari Paid (Cash)', udhariPaidCash.toFixed(2)],
-                ['Cash Return', cashReturn.toFixed(2)],
-                ['Total Expenses', `-${analyticsData.totalExpenses.toFixed(2)}`],
-                ['Closing Cash', totalInHand.toFixed(2)],
+                ['Opening Balance', openingBalance.toFixed(2)],
+                ['Total Cash Sales', cashSales.toFixed(2)],
+                ['Total Online Sales', onlineSales.toFixed(2)],
+                ['Total Udhari Paid (Cash)', udhariPaidCash.toFixed(2)],
+                ['Total Udhari Paid (Online)', udhariPaidOnline.toFixed(2)],
+                ['Total Expenses', totalExpenses.toFixed(2)],
+                ['Total Cash Returns', cashReturns.toFixed(2)],
+                ['Closing Balance (Cash in Hand)', closingBalance.toFixed(2)],
             ],
             theme: 'grid',
             headStyles: { fillColor: [41, 128, 185] },
-            foot: [['Total Online Sales', (analyticsData.onlineSales).toFixed(2)]],
-            footStyles: { fillColor: [22, 160, 133], textColor: 255 },
-            styles: { fontSize: 10 },
         });
 
-        const allEntries = entries.map(e => [e.time, e.type, e.details, e.amount < 0 ? `-${Math.abs(e.amount).toFixed(2)}` : e.amount.toFixed(2)]);
+        return doc;
+    };
 
-        autoTable(doc, {
-            startY: (doc as any).lastAutoTable.finalY + 10,
-            head: [['Time', 'Type', 'Details', 'Amount']],
-            body: allEntries,
-            theme: 'striped',
-            headStyles: { fillColor: [41, 128, 185] },
-            styles: { fontSize: 9 },
-        });
-        
-        doc.save(`Full-Report-${appState.selectedDate}.pdf`);
-        toast({ title: "PDF Exported", description: "Full report has been downloaded." });
-    }
+    const handleExportPdf = () => {
+        try {
+            const doc = generatePdf();
+            doc.save(`Full-Report-${appState.selectedDate}.pdf`);
+            toast({ title: "PDF Exported", description: "Full report has been downloaded." });
+        } catch (error) {
+            console.error("PDF generation failed:", error);
+            toast({ title: "Error", description: "Failed to generate PDF.", variant: "destructive" });
+        }
+    };
     
+    const handleEmailReport = async () => {
+        toast({ title: "Coming Soon!", description: "Email functionality will be implemented in a future update." });
+    }
+
     const TransactionTable = ({ title, data, onEdit, onDelete }: { title: string, data: Entry[], onEdit: (entry: Entry) => void, onDelete: (entry: Entry) => void }) => {
         const total = data.reduce((sum, entry) => sum + entry.amount, 0);
 
@@ -2082,17 +2146,22 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const cashInEntries = entries.filter(e => e.type === 'Cash' || (e.type === 'UDHARI PAID' && !e.details.includes('(Online)')));
     const onlineInEntries = entries.filter(e => e.type === 'Online' || (e.type === 'UDHARI PAID' && e.details.includes('(Online)')));
     const udhariGivenEntries = entries.filter(e => e.type === 'UDHAR DIYE');
-    const expenseAndReturnEntries = entries.filter(e => ['Expense', 'Cash Return', 'Credit Return'].includes(e.type));
+    const expenseAndReturnEntries = entries.filter(e => ['Expense', 'Cash Return'].includes(e.type));
+    const creditReturnEntries = entries.filter(e => e.type === 'Credit Return');
+
 
     // Detailed summary calculation
     const cashSales = entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0);
     const onlineSales = entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0);
     const totalSales = cashSales + onlineSales;
-    const totalExpenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0); // is negative
+    
     const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
+    const udhariPaidOnline = entries.filter(e => e.type === 'UDHARI PAID' && e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
+    const totalOnlineRevenue = onlineSales + udhariPaidOnline;
+    
+    const totalExpenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0); // is negative
     const cashReturns = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0); // is negative
     
-    // Corrected cashflow and closing balance calculation
     const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
     
     const todaysCashFlow = cashSales + totalExpenses + udhariPaidCash + cashReturns;
@@ -2108,10 +2177,8 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                         <CardDescription>A categorized log of all transactions for the selected day.</CardDescription>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                       <Button onClick={exportFullReportPdf} variant="destructive">Full Report PDF</Button>
-                       <Button onClick={() => toast({title: "Coming soon"})} className="bg-green-700 hover:bg-green-800">Cash Report PDF</Button>
-                       <Button onClick={() => toast({title: "Coming soon"})} className="bg-blue-700 hover:bg-blue-800">Online Report PDF</Button>
-                       <Button onClick={() => toast({title: "Coming soon"})} className="bg-green-700 hover:bg-green-800">Export Excel</Button>
+                       <Button onClick={handleExportPdf} variant="destructive">Full Report PDF</Button>
+                       <Button onClick={handleEmailReport} className="bg-blue-700 hover:bg-blue-800"><Mail className="mr-2 h-4 w-4" />Email Report</Button>
                    </div>
                 </div>
             </CardHeader>
@@ -2120,7 +2187,9 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     <TransactionTable title="Cash In" data={cashInEntries} onEdit={onEdit} onDelete={onDelete} />
                     <TransactionTable title="Online In" data={onlineInEntries} onEdit={onEdit} onDelete={onDelete} />
                     <TransactionTable title="Udhari Given" data={udhariGivenEntries} onEdit={onEdit} onDelete={onDelete} />
-                    <TransactionTable title="Expenses &amp; Returns" data={expenseAndReturnEntries} onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionTable title="Expenses & Cash Returns" data={expenseAndReturnEntries} onEdit={onEdit} onDelete={onDelete} />
+                    <TransactionTable title="Udhari Returns" data={creditReturnEntries} onEdit={onEdit} onDelete={onDelete} />
+
                 </div>
             </CardContent>
             <CardFooter className="flex-col items-stretch p-4 mt-4 border-t bg-muted/40">
@@ -2128,6 +2197,10 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                      {totalSales > 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Today's Sales Total</span>
                         <span className="font-semibold text-purple-600">{totalSales.toFixed(2)}</span>
+                    </div>}
+                     {totalOnlineRevenue > 0 && <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Total Online Revenue</span>
+                        <span className="font-semibold text-sky-600">{totalOnlineRevenue.toFixed(2)}</span>
                     </div>}
                     {todaysUdhariGiven > 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Today's Udhari Given</span>
@@ -2151,7 +2224,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     </div>
                     {appState.openingBalance > 0 &&
                         <div className="text-xs text-muted-foreground text-center pt-1">
-                            (Calculation: {todaysCashFlow.toFixed(2)} Today's Flow + {appState.openingBalance.toFixed(2)} Opening)
+                            (Calculation: {appState.openingBalance.toFixed(2)} Opening + {todaysCashFlow.toFixed(2)} Today's Flow)
                         </div>
                     }
                 </div>
@@ -2160,12 +2233,3 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     );
 };
 
-
-    
-
-    
-
-
-
-
-    
