@@ -229,6 +229,9 @@ export default function BrandTrackerPro() {
                     ...existingCreditor,
                     transactions: [...existingCreditor.transactions, transaction]
                 };
+                if (phone && !existingCreditor.phone) {
+                    updatedCreditor.phone = phone;
+                }
                 newCreditors[existingCreditorIndex] = updatedCreditor;
             } else {
                 const newCreditor: Creditor = {
@@ -621,12 +624,14 @@ const SalesTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'], 
     const [saleType, setSaleType] = React.useState<Entry['type']>('Online');
     const [amount, setAmount] = React.useState('');
     const [customer, setCustomer] = React.useState('');
+    const [phone, setPhone] = React.useState('');
     const [description, setDescription] = React.useState('');
     const [suggestions, setSuggestions] = React.useState<Creditor[]>([]);
     const { toast } = useToast();
     const amountInputRef = React.useRef<HTMLInputElement>(null);
     const [isDuplicateAlertOpen, setIsDuplicateAlertOpen] = React.useState(false);
     const [pendingTransaction, setPendingTransaction] = React.useState<(() => void) | null>(null);
+    const [selectedCreditor, setSelectedCreditor] = React.useState<Creditor | null>(null);
 
     const handleButtonClick = (type: Entry['type']) => {
         setSaleType(type);
@@ -636,6 +641,8 @@ const SalesTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'], 
     const handleCustomerChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const value = e.target.value;
         setCustomer(value);
+        setSelectedCreditor(null);
+        setPhone('');
         if (value) {
             const filtered = (appState.creditors || []).filter(c => c.name.toLowerCase().includes(value.toLowerCase())).slice(0, 5);
             setSuggestions(filtered);
@@ -646,6 +653,8 @@ const SalesTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'], 
 
     const handleSuggestionClick = (creditor: Creditor) => {
         setCustomer(creditor.name);
+        setPhone(creditor.phone || '');
+        setSelectedCreditor(creditor);
         setSuggestions([]);
     };
 
@@ -660,10 +669,12 @@ const SalesTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'], 
             details = saleType;
         }
 
-        onAddEntry(saleType, finalAmount, details);
+        onAddEntry(saleType, finalAmount, details, { phone: phone.trim() });
         setAmount('');
         setCustomer('');
         setDescription('');
+        setPhone('');
+        setSelectedCreditor(null);
         setSuggestions([]);
         if (pendingTransaction) {
           setIsDuplicateAlertOpen(false);
@@ -683,8 +694,14 @@ const SalesTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'], 
             toast({ title: "Customer Name Required", description: "Please enter a customer name for Udhari transactions.", variant: "destructive" });
             return;
         }
-
+        
         if (saleType === 'UDHAR DIYE') {
+            const existingCreditor = appState.creditors.find(c => c.name.toLowerCase() === customer.trim().toLowerCase());
+            if (!existingCreditor && !phone.trim()) {
+                 toast({ title: "Mobile number required for new customers", variant: "destructive" });
+                 return;
+            }
+        
             const isDuplicate = appState.entries.some(entry => 
                 entry.date === appState.selectedDate &&
                 entry.type === 'UDHAR DIYE' &&
@@ -768,6 +785,15 @@ const SalesTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'], 
                                     </div>
                                 )}
                             </div>
+                            {saleType === 'UDHAR DIYE' && (
+                                <Input 
+                                    value={phone} 
+                                    onChange={(e) => setPhone(e.target.value)}
+                                    placeholder="Mobile Number (Required for new)" 
+                                    disabled={!!selectedCreditor} 
+                                    autoComplete="off" 
+                                />
+                            )}
                             <Input 
                                 value={description}
                                 onChange={e => setDescription(e.target.value)}
@@ -896,7 +922,9 @@ const UdhariTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'],
             toast({ title: "Customer Name Required", variant: "destructive" });
             return;
         }
-        if (!selectedCreditor && !phone.trim()) {
+        
+        const existingCreditor = appState.creditors.find(c => c.name.toLowerCase() === customer.trim().toLowerCase());
+        if (!existingCreditor && !phone.trim()) {
             toast({ title: "Mobile number required for new customers", variant: "destructive" });
             return;
         }
@@ -914,7 +942,6 @@ const UdhariTab = ({ onAddEntry, appState }: { onAddEntry: (type: Entry['type'],
             return;
         }
         
-        const existingCreditor = appState.creditors.find(c => c.name.toLowerCase() === customer.trim().toLowerCase());
         const balance = existingCreditor ? calculateBalance(existingCreditor.transactions) : 0;
 
         if (!existingCreditor || balance <= 0) {
@@ -2132,3 +2159,6 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         </Card>
     );
 };
+
+
+    
