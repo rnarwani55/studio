@@ -2278,6 +2278,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
 
     const mainHeadStyles = { fillColor: [41, 45, 50], textColor: [255, 255, 255], fontStyle: 'bold' };
     const headStyles = { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' };
+    const footStyles = { fillColor: [209, 213, 219], textColor: [0, 0, 0], fontStyle: 'bold' };
 
     const transactionCategories = [
         { title: 'Cash Sales', types: ['Cash'], positive: true },
@@ -2332,10 +2333,11 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         autoTable(doc, {
             startY: (doc as any).lastAutoTable.finalY,
             body: body,
-            foot: [[{ content: 'Total', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } }, { content: total.toFixed(2), styles: { halign: 'right', fontStyle: 'bold' } }]],
+            foot: [[{ content: 'Total', colSpan: 2, styles: { halign: 'right' } }, { content: total.toFixed(2), styles: { halign: 'right' } }]],
             theme: 'grid',
             showHead: false,
             columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
+            footStyles: footStyles,
             didParseCell: (data) => {
                  if (data.column.index === 2 && data.cell.raw) {
                     const value = parseFloat(String(data.cell.raw));
@@ -2397,7 +2399,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
             const rowStyle = summaryRows.find(r => r[0] === rowLabel);
             if (hookData.section === 'body' && rowStyle) {
                 hookData.cell.styles.textColor = rowStyle[2] as [number, number, number];
-                if (rowLabel === 'Closing Balance') {
+                if (rowLabel === 'Closing Balance' || rowLabel === 'Opening Balance') {
                     hookData.row.cells[0].styles.fontStyle = 'bold';
                     hookData.row.cells[1].styles.fontStyle = 'bold';
                 }
@@ -2472,5 +2474,6 @@ const PdfSummaryModal = ({ isOpen, onClose, appState, filterType }: { isOpen: bo
     );
 };
     
+
 
 
