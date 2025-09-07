@@ -2361,8 +2361,8 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     };
     
     const mainHeadStyles = { fillColor: [75, 85, 99], textColor: [255, 255, 255], fontStyle: 'bold' };
-    const headStyles = { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' };
-    const footStyles = { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold' };
+    const headStyles = { fillColor: [248, 250, 252], textColor: [0, 0, 0], fontStyle: 'bold' };
+    const footStyles = { fillColor: false as const, textColor: [0, 0, 0], fontStyle: 'bold' };
     const tableOptions = {
       theme: 'grid',
       headStyles: headStyles,
