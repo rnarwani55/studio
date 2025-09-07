@@ -407,7 +407,7 @@ export default function BrandTrackerPro() {
             reportDate={parse(appState.selectedDate, 'yyyy-MM-dd', new Date())}
             onDateChange={handleDateChange}
             openingBalance={appState.openingBalance}
-            onOpeningBalanceChange={handleOpeningBalanceChange}
+            onOpeningBalanceChange={onOpeningBalanceChange}
             onBackup={handleBackup}
             onRestore={handleRestore}
             onClearData={() => setIsClearDataAlertOpen(true)}
@@ -1974,28 +1974,99 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
 
     const generatePdf = () => {
         const doc = new jsPDF();
-        const selectedDateFmt = format(parse(appState.selectedDate, 'yyyy-MM-dd', new Date()), "PPP");
-        
-        doc.setFontSize(20);
-        doc.text("MASTER OF BRANDS", 105, 15, { align: 'center' });
-        doc.setFontSize(12);
-        doc.text(`Daily Report: ${selectedDateFmt}`, 105, 22, { align: 'center' });
-        
-        let finalY = 30;
-        const tableHeaderStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0] };
-        const tableSubHeaderStyles = { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold' };
+        const page_width = doc.internal.pageSize.getWidth();
+        const selectedDate = parse(appState.selectedDate, 'yyyy-MM-dd', new Date());
 
+        // Add custom font if available - assuming it's loaded in the browser context
+        // doc.addFont('PT_Sans-Normal.ttf', 'PT Sans', 'normal');
+        // doc.setFont('PT Sans');
+
+        // Document variables
+        const lightGray = 245;
+        const darkGray = 50;
+        const redColor = [220, 38, 38];
+        const textNormal = 50;
+        const textLight = 120;
+        let finalY = 0;
+        
+        // #region Header
+        doc.setFontSize(22);
+        doc.setFont('helvetica', 'bold');
+        doc.text("MASTER OF BRANDS", page_width / 2, 15, { align: 'center' });
+        
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(textLight);
+        doc.text(`Financial Report for ${format(selectedDate, "dd/MM/yyyy")}`, page_width / 2, 21, { align: 'center' });
+        
+        // Date Box
+        const dayOfWeek = format(selectedDate, 'EEEE');
+        const dayOfMonth = format(selectedDate, 'd');
+        const month = format(selectedDate, 'MMMM');
+        
+        doc.setFillColor(redColor[0], redColor[1], redColor[2]);
+        doc.roundedRect(page_width - 32, 10, 22, 22, 3, 3, 'F');
+        
+        doc.setTextColor(255, 255, 255);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(8);
+        doc.text(dayOfWeek, page_width - 21, 15, { align: 'center' });
+        doc.setFontSize(16);
+        doc.text(dayOfMonth, page_width - 21, 22, { align: 'center' });
+        doc.setFontSize(8);
+        doc.text(month, page_width - 21, 26, { align: 'center' });
+        
+        doc.setTextColor(textNormal);
+        finalY = 38;
+        // #endregion
+        
+        // #region Top Summary Cards
+        const cashSales = entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0);
+        const onlineSales = entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0);
+        const udhariPaid = entries.filter(e => e.type === 'UDHARI PAID').reduce((s, e) => s + e.amount, 0);
+        const udhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
+        const expenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0);
+        const cashReturn = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
+        const openingBalance = appState.openingBalance;
+        const todaysCash = openingBalance + cashSales + entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0) + expenses + cashReturn;
+
+
+        const topSummaryData = [
+            [{ title: "Cash Sales", value: cashSales }, { title: "Online Sales", value: onlineSales }, { title: "Udhari Rcvd", value: udhariPaid }],
+            [{ title: "Udhari Given", value: udhariGiven }, { title: "Expenses", value: expenses }, { title: "Today's Cash", value: todaysCash }]
+        ];
+
+        autoTable(doc, {
+            startY: finalY,
+            body: topSummaryData.map(row => row.map(cell => `${cell.title}\n${cell.value.toFixed(2)}`)),
+            theme: 'plain',
+            styles: {
+                halign: 'center',
+                valign: 'middle',
+                cellPadding: 3,
+            },
+            didDrawCell: (data) => {
+                doc.setDrawColor(220, 220, 220);
+                doc.roundedRect(data.cell.x, data.cell.y, data.cell.width, data.cell.height, 2, 2, 'S');
+            },
+            margin: { left: 14, right: 14 }
+        });
+        finalY = (doc as any).lastAutoTable.finalY + 10;
+        // #endregion
+        
+        // #region Transaction Tables
         const transactionTypes: { title: string; type: Entry['type'] | Entry['type'][]; positive: boolean }[] = [
             { title: 'Cash Sales', type: 'Cash', positive: true },
             { title: 'Online Sales', type: 'Online', positive: true },
+            { title: 'Udhari (Credit Given)', type: 'UDHAR DIYE', positive: false },
             { title: 'Udhari Paid', type: 'UDHARI PAID', positive: true },
-            { title: 'Udhari Given', type: 'UDHAR DIYE', positive: false },
             { title: 'Expenses', type: 'Expense', positive: false },
             { title: 'Cash Returns', type: 'Cash Return', positive: false },
-            { title: 'Credit Returns', type: 'Credit Return', positive: false },
+            { title: 'Udhari Returns', type: 'Credit Return', positive: false },
         ];
         
         const summaryData: Record<string, number> = {};
+        const tableHeaderStyles = { fillColor: [41, 41, 41], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 10 };
 
         transactionTypes.forEach(tt => {
             const relevantEntries = entries
@@ -2003,7 +2074,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
 
             if (relevantEntries.length === 0) return;
 
-            const data = relevantEntries.map(e => {
+            const tableBody = relevantEntries.map(e => {
                 let details = e.details;
                 if (e.type === 'UDHAR DIYE' || e.type === 'UDHARI PAID') {
                    const match = e.details.match(/(?:From: )?(.*?) (?:- Desc:| \((?:Cash|Online)\))/);
@@ -2017,90 +2088,118 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                       details = `${customerName}\n(${oldBalance.toFixed(2)} old ${e.type === 'UDHAR DIYE' ? '+' : '-'} ${Math.abs(e.amount).toFixed(2)}) = ${newBalance.toFixed(2)}`
                    }
                 }
-                return [e.time, details, e.amount.toFixed(2)];
+                return [e.time, details, { content: e.amount.toFixed(2), styles: { halign: 'right' } }];
             });
             
-            const total = data.reduce((sum, row) => sum + parseFloat(row[2]), 0);
+            const total = relevantEntries.reduce((sum, row) => sum + row.amount, 0);
             summaryData[tt.title] = total;
 
             autoTable(doc, {
                 startY: finalY,
-                head: [[{ content: tt.title, colSpan: 3, styles: tableSubHeaderStyles }]],
+                head: [[
+                    { content: tt.title, colSpan: 3, styles: { ...tableHeaderStyles, halign: 'left' } }
+                ]],
                 body: [
-                  ['Time', 'Details', 'Amount'],
-                  ...data,
-                  [{ content: 'Total', styles: { halign: 'right', fontStyle: 'bold' } }, '', { content: Math.abs(total).toFixed(2), styles: { fontStyle: 'bold' } }]
+                    [
+                        { content: 'Time', styles: { fontStyle: 'bold' } },
+                        { content: 'Details', styles: { fontStyle: 'bold' } },
+                        { content: 'Amount', styles: { fontStyle: 'bold', halign: 'right' } }
+                    ],
+                    ...tableBody,
+                    [
+                        { content: 'Total', colSpan: 2, styles: { halign: 'right', fontStyle: 'bold' } },
+                        { content: Math.abs(total).toFixed(2), styles: { halign: 'right', fontStyle: 'bold' } }
+                    ]
                 ],
                 theme: 'grid',
-                headStyles: { ...tableHeaderStyles, ...tableSubHeaderStyles },
-                didDrawPage: (data) => { finalY = data.cursor?.y || 30; }
+                headStyles: tableHeaderStyles,
+                styles: { fontSize: 9, cellPadding: 2 },
+                didDrawPage: (data) => { finalY = data.cursor?.y || finalY; },
+                margin: { left: 14, right: 14 }
             });
-            finalY = (doc as any).lastAutoTable.finalY + 10;
+            finalY = (doc as any).lastAutoTable.finalY + 8;
         });
+        // #endregion
         
-        // Staff Report
+        // Move to next page if not enough space
+        if (finalY > 220) {
+          doc.addPage();
+          finalY = 15;
+        }
+
+        // #region Final Summary
+        autoTable(doc, {
+            startY: finalY,
+            head: [[{ content: 'Final Summary', styles: { ...tableHeaderStyles, halign: 'left' } }]],
+            theme: 'grid',
+            margin: { left: 14, right: 14 }
+        });
+        finalY = (doc as any).lastAutoTable.finalY;
+
+        const cashSalesTotal = summaryData['Cash Sales'] || 0;
+        const onlineSalesTotal = summaryData['Online Sales'] || 0;
+        const udhariPaidTotal = summaryData['Udhari Paid'] || 0;
+        const udhariGivenTotal = summaryData['Udhari (Credit Given)'] || 0;
+        const expensesTotal = (summaryData['Expenses'] || 0) + (summaryData['Cash Returns'] || 0) + (summaryData['Udhari Returns'] || 0);
+        const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
+
+        const cashFlowTotal = cashSalesTotal + udhariPaidCash + expensesTotal;
+        const closingBalance = openingBalance + cashFlowTotal;
+
+        const summaryRows = [];
+        if (openingBalance > 0) summaryRows.push(['Opening Balance', openingBalance.toFixed(2)]);
+        if (cashSalesTotal > 0) summaryRows.push([{content: 'Cash Sales', styles: {textColor: [0, 150, 0]}}, {content: cashSalesTotal.toFixed(2), styles: {textColor: [0, 150, 0]}}]);
+        if (onlineSalesTotal > 0) summaryRows.push([{content: 'Online Sales', styles: {textColor: [0, 0, 200]}}, {content: onlineSalesTotal.toFixed(2), styles: {textColor: [0, 0, 200]}}]);
+        if (udhariPaidTotal > 0) summaryRows.push([{content: 'Udhari Paid', styles: {textColor: [255, 165, 0]}}, {content: udhariPaidTotal.toFixed(2), styles: {textColor: [255, 165, 0]}}]);
+        if (udhariGivenTotal > 0) summaryRows.push([{content: 'Udhari Given', styles: {textColor: [255, 100, 0]}}, {content: udhariGivenTotal.toFixed(2), styles: {textColor: [255, 100, 0]}}]);
+        if (expensesTotal < 0) summaryRows.push([{content: 'Expenses & Returns', styles: {textColor: redColor}}, {content: expensesTotal.toFixed(2), styles: {textColor: redColor}}]);
+        summaryRows.push(['Today\'s Cash Flow Total', cashFlowTotal.toFixed(2)]);
+        summaryRows.push([{ content: 'Closing Balance (Cash in Hand)', styles: { fontStyle: 'bold' } }, { content: closingBalance.toFixed(2), styles: { fontStyle: 'bold' } }]);
+        
+        autoTable(doc, {
+            startY: finalY,
+            body: summaryRows,
+            theme: 'grid',
+            styles: { fontSize: 9, cellPadding: 2 },
+            columnStyles: { 1: { halign: 'right' } },
+            didDrawPage: (data) => { finalY = data.cursor?.y || finalY; },
+            margin: { left: 14, right: 14 }
+        });
+        finalY = (doc as any).lastAutoTable.finalY + 8;
+        // #endregion
+
+        // #region Staff Report
         if (appState.staff.length > 0) {
             const staffReportBody = appState.staff.map(s => {
                 const isAbsent = (s.absences || []).includes(appState.selectedDate);
                 const paymentToday = (s.payments || []).find(p => p.date === appState.selectedDate);
                 return [
                     s.name,
-                    isAbsent ? 'Absent' : 'Present',
-                    paymentToday ? `${paymentToday.amount.toFixed(2)} (${paymentToday.description})` : '-'
+                    { content: isAbsent ? 'Absent' : 'Present', styles: { textColor: isAbsent ? redColor : [0, 150, 0] } },
+                    { content: paymentToday ? `${paymentToday.amount.toFixed(2)} (${paymentToday.description})` : '0.00', styles: { halign: 'right' } }
                 ];
             });
 
             autoTable(doc, {
                 startY: finalY,
-                head: [[{ content: 'Staff Attendance & Payments', colSpan: 3, styles: tableSubHeaderStyles }]],
+                head: [[{ content: 'Daily Staff Report', colSpan: 3, styles: { ...tableHeaderStyles, halign: 'left' } }]],
                 body: [
-                    ['Name', 'Status', 'Payment Today'],
+                    ['Name', 'Status', { content: 'Total Paid Today', styles: { halign: 'right' } }],
                     ...staffReportBody
                 ],
                 theme: 'grid',
                 headStyles: tableHeaderStyles,
-                didDrawPage: (data) => { finalY = data.cursor?.y || 30; }
+                styles: { fontSize: 9, cellPadding: 2 },
+                didDrawPage: (data) => { finalY = data.cursor?.y || finalY; },
+                margin: { left: 14, right: 14 }
             });
             finalY = (doc as any).lastAutoTable.finalY + 10;
         }
-
-        // Final Summary
-        const cashSales = summaryData['Cash Sales'] || 0;
-        const onlineSales = summaryData['Online Sales'] || 0;
-        const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
-        const udhariPaidOnline = entries.filter(e => e.type === 'UDHARI PAID' && e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
-        const totalExpenses = summaryData['Expenses'] || 0;
-        const cashReturns = summaryData['Cash Returns'] || 0;
-        const openingBalance = appState.openingBalance;
-        const closingBalance = openingBalance + cashSales + udhariPaidCash + totalExpenses + cashReturns;
-
-        const summaryRows: (string | { content: string; styles: any })[][] = [];
-        const addSummaryRow = (label: string, value: number, color?: [number, number, number]) => {
-            if (value !== 0) {
-                summaryRows.push([label, { content: value.toFixed(2), styles: { textColor: color || [0,0,0], fontStyle: 'bold' } }]);
-            }
-        };
-        
-        if (openingBalance > 0) addSummaryRow('Opening Balance', openingBalance);
-        addSummaryRow('Total Cash Sales', cashSales, [0, 128, 0]); // Green
-        addSummaryRow('Total Online Sales', onlineSales, [0, 0, 255]); // Blue
-        addSummaryRow('Total Udhari Paid (Cash)', udhariPaidCash, [255, 165, 0]); // Orange
-        addSummaryRow('Total Udhari Paid (Online)', udhariPaidOnline, [255, 165, 0]); // Orange
-        addSummaryRow('Total Expenses', totalExpenses, [255, 0, 0]); // Red
-        addSummaryRow('Total Cash Returns', cashReturns, [255, 0, 0]); // Red
-        summaryRows.push([{ content: 'Closing Balance (Cash in Hand)', styles: {fontStyle: 'bold'}}, { content: closingBalance.toFixed(2), styles: { fontStyle: 'bold', textColor: closingBalance >= 0 ? [0, 128, 0] : [255, 0, 0] } }]);
-
-
-        autoTable(doc, {
-            startY: finalY,
-            head: [['Final Summary', 'Amount']],
-            body: summaryRows,
-            theme: 'grid',
-            headStyles: tableHeaderStyles,
-        });
+        // #endregion
 
         return doc;
     };
+
 
     const handleExportPdf = () => {
         try {
@@ -2318,7 +2417,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                     </div>
                     {appState.openingBalance > 0 &&
                         <div className="text-xs text-muted-foreground text-center pt-1">
-                            (Calculation: {todaysCashFlow.toFixed(2)} Today's Flow + {appState.openingBalance.toFixed(2)} Opening Balance)
+                           (Calculation: {todaysCashFlow.toFixed(2)} Today's Flow + {appState.openingBalance.toFixed(2)} Opening Balance)
                         </div>
                     }
                 </div>
