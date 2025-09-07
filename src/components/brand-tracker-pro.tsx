@@ -1,4 +1,5 @@
 
+
 "use client";
 
 import * as React from "react";
@@ -2092,8 +2093,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const cashReturns = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0); // is negative
     
     // Corrected cashflow and closing balance calculation
-    const todaysCashflow = cashSales + totalExpenses + udhariPaidCash + cashReturns;
-    const closingBalance = appState.openingBalance + todaysCashflow;
+    const closingBalance = appState.openingBalance + cashSales + totalExpenses + udhariPaidCash + cashReturns;
     const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
     const totalCashIn = cashSales + udhariPaidCash;
 
@@ -2124,6 +2124,10 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
             </CardContent>
             <CardFooter className="flex-col items-stretch p-4 mt-4 border-t bg-muted/40">
                 <div className="space-y-2 text-base">
+                    {appState.openingBalance > 0 && <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Opening Balance</span>
+                        <span className="font-semibold">{appState.openingBalance.toFixed(2)}</span>
+                    </div>}
                     {totalCashIn > 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Total Cash In</span>
                         <span className="font-semibold text-green-600">{totalCashIn.toFixed(2)}</span>
@@ -2135,12 +2139,6 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                      {totalSales > 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Today's Sales Total</span>
                         <span className="font-semibold text-purple-600">{totalSales.toFixed(2)}</span>
-                    </div>}
-                    {todaysCashflow !== 0 && <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Today's Cashflow (Cash In - Expenses - Returns)</span>
-                        <span className={cn("font-semibold", todaysCashflow >= 0 ? 'text-green-600' : 'text-red-600')}>
-                          {todaysCashflow.toFixed(2)}
-                        </span>
                     </div>}
                     {todaysUdhariGiven > 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Today's Udhari Given</span>
@@ -2166,4 +2164,5 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     
 
     
+
 
