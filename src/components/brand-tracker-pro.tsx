@@ -122,8 +122,8 @@ export default function BrandTrackerPro() {
     const onlineSales = todaysEntries.filter(e => e.type === 'Online').reduce((sum, e) => sum + e.amount, 0);
     const udhariPaidCash = todaysEntries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((sum, e) => sum + e.amount, 0);
     const udhariPaidOnline = todaysEntries.filter(e => e.type === 'UDHARI PAID' && e.details.includes('(Online)')).reduce((sum, e) => sum + e.amount, 0);
-    const expenses = todaysEntries.filter(e => e.type === 'Expense').reduce((sum_1, e) => sum_1 + e.amount, 0);
-    const cashReturn = todaysEntries.filter(e => e.type === 'Cash Return').reduce((sum_2, e) => sum_2 + e.amount, 0);
+    const expenses = todaysEntries.filter(e => e.type === 'Expense').reduce((sum, e) => sum + e.amount, 0);
+    const cashReturn = todaysEntries.filter(e => e.type === 'Cash Return').reduce((sum, e) => sum + e.amount, 0);
     const udhariGiven = todaysEntries.filter(e => e.type === 'UDHAR DIYE').reduce((sum, e) => sum + e.amount, 0);
     
     const totalCashIn = cashSales + udhariPaidCash;
@@ -131,7 +131,9 @@ export default function BrandTrackerPro() {
     const totalSales = cashSales + onlineSales;
     const totalUdhariPaid = udhariPaidCash + udhariPaidOnline;
     const totalExpenses = Math.abs(expenses);
-    const todaysCash = opening + totalCashIn + expenses + cashReturn;
+
+    // Corrected cash in hand calculation
+    const todaysCash = opening + cashSales + udhariPaidCash + expenses + cashReturn;
 
     return {
         opening,
@@ -2085,13 +2087,12 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const cashSales = entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0);
     const onlineSales = entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0);
     const totalSales = cashSales + onlineSales;
-    const totalExpenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0);
+    const totalExpenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0); // is negative
     const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
-    const cashReturns = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0);
+    const cashReturns = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0); // is negative
     
-    // Correct cashflow calculation
+    // Corrected cashflow and closing balance calculation
     const todaysCashflow = cashSales + udhariPaidCash + totalExpenses + cashReturns;
-    
     const closingBalance = appState.openingBalance + todaysCashflow;
     const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
 
@@ -2160,5 +2161,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     );
 };
 
+
+    
 
     
