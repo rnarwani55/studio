@@ -2335,7 +2335,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         closingBalance: data.closingBalance
     };
 
-    const Y_START_POSITION = drawSummaryWidgetsPdf(doc, widgetSummary) + 10;
+    const Y_START_POSITION = 75;
 
     const drawFullHeader = (docInstance: jsPDF) => {
         docInstance.setFont('helvetica', 'bold');
@@ -2360,7 +2360,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
         addPunchMark(doc);
     };
     
-    const mainHeadStyles = { fillColor: [41, 45, 50], textColor: [255, 255, 255], fontStyle: 'bold' };
+    const mainHeadStyles = { fillColor: [75, 85, 99], textColor: [255, 255, 255], fontStyle: 'bold' };
     const headStyles = { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' };
     const footStyles = { fillColor: [51, 65, 85], textColor: [255, 255, 255], fontStyle: 'bold' };
     const tableOptions = {
@@ -2368,7 +2368,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
       headStyles: headStyles,
       footStyles: footStyles,
       styles: {
-          lineColor: [241, 245, 249], // very light grey for grid lines
+          lineColor: [241, 245, 249],
           lineWidth: 0.1,
       },
       columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
@@ -2392,7 +2392,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     ];
 
     const allSummaries: Record<string, number> = {};
-    let lastFinalY: number | undefined = undefined;
+    let lastFinalY: number | undefined = Y_START_POSITION;
 
     const drawTable = (title: string, body: any[][], total: number) => {
         const tableHasContent = body.length > 0;
