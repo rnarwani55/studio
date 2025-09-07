@@ -1832,7 +1832,7 @@ const TransactionModal = ({ isOpen, onOpenChange, creditor, transaction, onAddTr
         if (transaction) {
             setAmount(transaction.amount.toString());
             setDescription(transaction.description);
-setDate(parse(transaction.date, 'yyyy-MM-dd', new Date()));
+            setDate(parse(transaction.date, 'yyyy-MM-dd', new Date()));
             setType(transaction.type);
         } else {
             setAmount("");
@@ -2361,7 +2361,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     };
     
     const mainHeadStyles = { fillColor: [75, 85, 99], textColor: [255, 255, 255], fontStyle: 'bold' };
-    const headStyles = { fillColor: [248, 250, 252], textColor: [0, 0, 0], fontStyle: 'bold' };
+    const headStyles = { fillColor: false as const, textColor: [0, 0, 0], fontStyle: 'bold' };
     const footStyles = { fillColor: false as const, textColor: [0, 0, 0], fontStyle: 'bold' };
     const tableOptions = {
       theme: 'grid',
@@ -2392,7 +2392,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     ];
 
     const allSummaries: Record<string, number> = {};
-    let lastFinalY: number | undefined = Y_START_POSITION;
+    let lastFinalY: number | undefined = undefined;
 
     const drawTable = (title: string, body: any[][], total: number) => {
         const tableHasContent = body.length > 0;
@@ -2594,4 +2594,5 @@ const PdfSummaryModal = ({ isOpen, onClose, appState, filterType }: { isOpen: bo
     
 
     
+
 
