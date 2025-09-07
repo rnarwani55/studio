@@ -130,8 +130,6 @@ export default function BrandTrackerPro() {
     const cashReturn = todaysEntries.filter(e => e.type === 'Cash Return').reduce((sum, e) => sum + e.amount, 0);
     const udhariGiven = todaysEntries.filter(e => e.type === 'UDHAR DIYE').reduce((sum, e) => sum + e.amount, 0);
     
-    const totalCashIn = cashSales + udhariPaidCash;
-    const totalOnlineIn = onlineSales + udhariPaidOnline;
     const totalSales = cashSales + onlineSales;
     const totalUdhariPaid = udhariPaidCash + udhariPaidOnline;
     const totalExpenses = Math.abs(expenses);
@@ -140,8 +138,6 @@ export default function BrandTrackerPro() {
 
     return {
         opening,
-        totalCashIn,
-        totalOnlineIn,
         totalUdhariPaid,
         totalExpenses,
         todaysCash,
@@ -1989,56 +1985,57 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
         const tableHeaderStyles = { fillColor: [240, 240, 240], textColor: [0, 0, 0] };
         const tableSubHeaderStyles = { fillColor: [220, 220, 220], textColor: [0, 0, 0], fontStyle: 'bold' };
 
-        const transactionTypes: { title: string, type: Entry['type'] | Entry['type'][] }[] = [
-            { title: 'Cash Sales', type: 'Cash' },
-            { title: 'Online Sales', type: 'Online' },
-            { title: 'Udhari Paid', type: 'UDHARI PAID' },
-            { title: 'Udhari Given', type: 'UDHAR DIYE' },
-            { title: 'Expenses', type: 'Expense'},
-            { title: 'Cash Returns', type: 'Cash Return' },
-            { title: 'Credit Returns', type: 'Credit Return' },
+        const transactionTypes: { title: string; type: Entry['type'] | Entry['type'][]; positive: boolean }[] = [
+            { title: 'Cash Sales', type: 'Cash', positive: true },
+            { title: 'Online Sales', type: 'Online', positive: true },
+            { title: 'Udhari Paid', type: 'UDHARI PAID', positive: true },
+            { title: 'Udhari Given', type: 'UDHAR DIYE', positive: false },
+            { title: 'Expenses', type: 'Expense', positive: false },
+            { title: 'Cash Returns', type: 'Cash Return', positive: false },
+            { title: 'Credit Returns', type: 'Credit Return', positive: false },
         ];
         
         const summaryData: Record<string, number> = {};
 
         transactionTypes.forEach(tt => {
-            const data = entries
-                .filter(e => Array.isArray(tt.type) ? tt.type.includes(e.type) : e.type === tt.type)
-                .map(e => {
-                    let details = e.details;
-                    if (e.type === 'UDHAR DIYE' || e.type === 'UDHARI PAID') {
-                       const match = e.details.match(/(?:From: )?(.*?) (?:- Desc:| \((?:Cash|Online)\))/);
-                       const customerName = match ? match[1].trim() : e.details.trim();
-                       const creditor = appState.creditors.find(c => c.name === customerName);
-                       if(creditor) {
-                          const newBalance = calculateBalance(creditor.transactions);
-                          const oldBalance = e.type === 'UDHAR DIYE' 
-                              ? newBalance - e.amount
-                              : newBalance + e.amount;
-                          details = `${customerName}\n(${oldBalance.toFixed(2)} old ${e.type === 'UDHAR DIYE' ? '+' : '-'} ${Math.abs(e.amount).toFixed(2)}) = ${newBalance.toFixed(2)}`
-                       }
-                    }
-                    return [e.time, details, e.amount.toFixed(2)]
-                });
+            const relevantEntries = entries
+                .filter(e => Array.isArray(tt.type) ? tt.type.includes(e.type) : e.type === tt.type);
+
+            if (relevantEntries.length === 0) return;
+
+            const data = relevantEntries.map(e => {
+                let details = e.details;
+                if (e.type === 'UDHAR DIYE' || e.type === 'UDHARI PAID') {
+                   const match = e.details.match(/(?:From: )?(.*?) (?:- Desc:| \((?:Cash|Online)\))/);
+                   const customerName = match ? match[1].trim() : e.details.trim();
+                   const creditor = appState.creditors.find(c => c.name === customerName);
+                   if(creditor) {
+                      const newBalance = calculateBalance(creditor.transactions);
+                      const oldBalance = e.type === 'UDHAR DIYE' 
+                          ? newBalance - e.amount
+                          : newBalance + e.amount;
+                      details = `${customerName}\n(${oldBalance.toFixed(2)} old ${e.type === 'UDHAR DIYE' ? '+' : '-'} ${Math.abs(e.amount).toFixed(2)}) = ${newBalance.toFixed(2)}`
+                   }
+                }
+                return [e.time, details, e.amount.toFixed(2)];
+            });
             
             const total = data.reduce((sum, row) => sum + parseFloat(row[2]), 0);
             summaryData[tt.title] = total;
 
-            if (data.length > 0) {
-                 autoTable(doc, {
-                    startY: finalY,
-                    head: [[{ content: tt.title, styles: tableSubHeaderStyles }]],
-                    body: [
-                      ['Time', 'Details', 'Amount'],
-                      ...data,
-                      [{ content: 'Total', styles: { halign: 'right', fontStyle: 'bold' } }, '', { content: Math.abs(total).toFixed(2), styles: { fontStyle: 'bold' } }]
-                    ],
-                    theme: 'grid',
-                    headStyles: tableHeaderStyles,
-                    didDrawPage: (data) => { finalY = data.cursor?.y || 30; }
-                });
-                finalY = (doc as any).lastAutoTable.finalY + 10;
-            }
+            autoTable(doc, {
+                startY: finalY,
+                head: [[{ content: tt.title, colSpan: 3, styles: tableSubHeaderStyles }]],
+                body: [
+                  ['Time', 'Details', 'Amount'],
+                  ...data,
+                  [{ content: 'Total', styles: { halign: 'right', fontStyle: 'bold' } }, '', { content: Math.abs(total).toFixed(2), styles: { fontStyle: 'bold' } }]
+                ],
+                theme: 'grid',
+                headStyles: { ...tableHeaderStyles, ...tableSubHeaderStyles },
+                didDrawPage: (data) => { finalY = data.cursor?.y || 30; }
+            });
+            finalY = (doc as any).lastAutoTable.finalY + 10;
         });
         
         // Staff Report
