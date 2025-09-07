@@ -2084,17 +2084,18 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     const expenseAndReturnEntries = entries.filter(e => ['Expense', 'Cash Return', 'Credit Return'].includes(e.type));
 
     // Detailed summary calculation
-    const cashSales = cashInEntries.reduce((s, e) => s + e.amount, 0);
-    const onlineSales = onlineInEntries.reduce((s, e) => s + e.amount, 0);
+    const cashSales = entries.filter(e => e.type === 'Cash').reduce((s, e) => s + e.amount, 0);
+    const onlineSales = entries.filter(e => e.type === 'Online').reduce((s, e) => s + e.amount, 0);
     const totalSales = cashSales + onlineSales;
     const totalExpenses = entries.filter(e => e.type === 'Expense').reduce((s, e) => s + e.amount, 0); // is negative
     const udhariPaidCash = entries.filter(e => e.type === 'UDHARI PAID' && !e.details.includes('(Online)')).reduce((s, e) => s + e.amount, 0);
     const cashReturns = entries.filter(e => e.type === 'Cash Return').reduce((s, e) => s + e.amount, 0); // is negative
     
     // Corrected cashflow and closing balance calculation
-    const todaysCashflow = cashSales + totalExpenses + cashReturns;
+    const todaysCashflow = cashSales + totalExpenses + udhariPaidCash + cashReturns;
     const closingBalance = appState.openingBalance + todaysCashflow;
     const todaysUdhariGiven = entries.filter(e => e.type === 'UDHAR DIYE').reduce((s, e) => s + e.amount, 0);
+    const totalCashIn = cashSales + udhariPaidCash;
 
 
     return (
@@ -2123,9 +2124,9 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
             </CardContent>
             <CardFooter className="flex-col items-stretch p-4 mt-4 border-t bg-muted/40">
                 <div className="space-y-2 text-base">
-                    {cashSales > 0 && <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Total Cash Sales</span>
-                        <span className="font-semibold text-green-600">{cashSales.toFixed(2)}</span>
+                    {totalCashIn > 0 && <div className="flex justify-between items-center">
+                        <span className="text-muted-foreground">Total Cash In</span>
+                        <span className="font-semibold text-green-600">{totalCashIn.toFixed(2)}</span>
                     </div>}
                     {onlineSales > 0 && <div className="flex justify-between items-center">
                         <span className="text-muted-foreground">Total Online Sales</span>
@@ -2136,7 +2137,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
                         <span className="font-semibold text-purple-600">{totalSales.toFixed(2)}</span>
                     </div>}
                     {todaysCashflow !== 0 && <div className="flex justify-between items-center">
-                        <span className="text-muted-foreground">Today's Cashflow Total</span>
+                        <span className="text-muted-foreground">Today's Cashflow (Cash In - Expenses - Returns)</span>
                         <span className={cn("font-semibold", todaysCashflow >= 0 ? 'text-green-600' : 'text-red-600')}>
                           {todaysCashflow.toFixed(2)}
                         </span>
@@ -2165,3 +2166,4 @@ const ReportSection = ({ entries, appState, onEdit, onDelete }: { entries: Entry
     
 
     
+
