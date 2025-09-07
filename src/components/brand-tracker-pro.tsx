@@ -2091,7 +2091,7 @@ const ReportSection = ({ entries, appState, onEdit, onDelete, onPdfRequest }: { 
                         {data.length > 0 && (
                             <TableFooter>
                                 <TableRow>
-                                    <TableCell colSpan={2} className="text-right font-bold">Total</TableCell>
+                                    <TableCell colSpan={3} className="text-right font-bold">Total</TableCell>
                                     <TableCell className="text-right font-bold">{total.toFixed(2)}</TableCell>
                                     <TableCell />
                                 </TableRow>
@@ -2299,6 +2299,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     const data = getReportData(appState, filterType);
     const selectedDate = parse(appState.selectedDate, 'yyyy-MM-dd', new Date());
     const selectedDateForTitle = format(selectedDate, 'dd/MM/yyyy');
+    const Y_START_POSITION = 68;
     
     let reportTitle = `Financial Report for ${selectedDateForTitle}`;
     if (filterType === 'cash') reportTitle = `Cash Only Report for ${selectedDateForTitle}`;
@@ -2313,11 +2314,11 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     
     const widgetSummary = {
         openingBalance: data.openingBalance,
-        cashSales: cashSales,
-        onlineSales: onlineSales,
-        udhariGiven: udhariGiven,
-        udhariPaid: udhariPaid,
-        expenses: expenses,
+        cashSales,
+        onlineSales,
+        udhariGiven,
+        udhariPaid,
+        expenses,
         closingBalance: data.closingBalance
     };
 
@@ -2334,12 +2335,18 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
 
     const addPunchMark = (docInstance: jsPDF) => {
         const pageHeight = docInstance.internal.pageSize.getHeight();
-        docInstance.setFillColor(200, 200, 200);
-        docInstance.circle(10, pageHeight / 2, 1.5, 'F');
+        docInstance.setFontSize(18);
+        docInstance.setTextColor(200, 200, 200);
+        docInstance.text('>', 8, pageHeight / 2, { baseline: 'middle' });
     };
     
-    drawFullHeader(doc);
-    addPunchMark(doc);
+    const pageDrawHook = (hookData: any) => {
+        drawFullHeader(doc);
+        addPunchMark(doc);
+        // Reset the start Y position for the new page's content
+        // hookData is for the *next* table, so we don't set startY here directly
+        // but it ensures the header is drawn on every page.
+    };
 
     const mainHeadStyles = { fillColor: [41, 45, 50], textColor: [255, 255, 255], fontStyle: 'bold' };
     const headStyles = { fillColor: [241, 245, 249], textColor: [0, 0, 0], fontStyle: 'bold' };
@@ -2354,7 +2361,38 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
     ];
 
     const allSummaries: Record<string, number> = {};
-    let yPos = 68;
+    let yPos = Y_START_POSITION;
+
+    const drawTable = (title: string, body: any[], total: number, startY: number) => {
+        autoTable(doc, {
+            startY: startY,
+            head: [[{ content: title, colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
+            body: [[ 'Time', 'Details', 'Amount' ]],
+            theme: 'grid',
+            headStyles: headStyles,
+            columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
+            didDrawPage: pageDrawHook,
+        });
+
+        autoTable(doc, {
+            startY: (doc as any).lastAutoTable.finalY,
+            body: body,
+            foot: [[{ content: 'Total', colSpan: 2, styles: { halign: 'right' } }, { content: total.toFixed(2), styles: { halign: 'right' } }]],
+            theme: 'grid',
+            showHead: false,
+            columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
+            footStyles: footStyles,
+            didParseCell: (data) => {
+                 if (data.column.index === 2 && data.cell.raw) {
+                    const value = parseFloat(String(data.cell.raw));
+                    if (value < 0) data.cell.styles.textColor = [220, 38, 38];
+                 }
+            },
+            didDrawPage: pageDrawHook
+        });
+        return (doc as any).lastAutoTable.finalY + 10;
+    };
+
 
     transactionCategories.forEach(cat => {
         const entries = data.todaysEntries.filter(e => cat.types!.includes(e.type));
@@ -2387,41 +2425,7 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
             return [e.time, details, e.amount.toFixed(2)];
         });
         
-        autoTable(doc, {
-            startY: yPos,
-            head: [[{ content: cat.title, colSpan: 3, styles: { ...mainHeadStyles, halign: 'center' } }]],
-            body: [[ 'Time', 'Details', 'Amount' ]],
-            theme: 'grid',
-            headStyles: headStyles,
-            columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
-            didDrawPage: (hookData) => {
-                drawFullHeader(doc);
-                addPunchMark(doc);
-                hookData.settings.startY = 68;
-            }
-        });
-
-        autoTable(doc, {
-            startY: (doc as any).lastAutoTable.finalY,
-            body: body,
-            foot: [[{ content: 'Total', colSpan: 2, styles: { halign: 'right' } }, { content: total.toFixed(2), styles: { halign: 'right' } }]],
-            theme: 'grid',
-            showHead: false,
-            columnStyles: { 0: { cellWidth: 20 }, 2: { halign: 'right' } },
-            footStyles: footStyles,
-            didParseCell: (data) => {
-                 if (data.column.index === 2 && data.cell.raw) {
-                    const value = parseFloat(String(data.cell.raw));
-                    if (value < 0) data.cell.styles.textColor = [220, 38, 38];
-                 }
-            },
-            didDrawPage: (hookData) => {
-                drawFullHeader(doc);
-                addPunchMark(doc);
-                hookData.settings.startY = 68;
-            }
-        });
-        yPos = (doc as any).lastAutoTable.finalY + 10;
+        yPos = drawTable(cat.title, body, total, yPos);
     });
     
     // Staff Report
@@ -2438,22 +2442,14 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
             body: [['Staff Name', 'Attendance', 'Payments Today']],
             theme: 'grid',
             headStyles: headStyles,
-             didDrawPage: (hookData) => {
-                drawFullHeader(doc);
-                addPunchMark(doc);
-                hookData.settings.startY = 68;
-            }
+            didDrawPage: pageDrawHook,
         });
         autoTable(doc, {
             startY: (doc as any).lastAutoTable.finalY,
             body: staffBody,
             theme: 'grid',
             showHead: false,
-             didDrawPage: (hookData) => {
-                drawFullHeader(doc);
-                addPunchMark(doc);
-                hookData.settings.startY = 68;
-            }
+            didDrawPage: pageDrawHook,
         });
         yPos = (doc as any).lastAutoTable.finalY + 10;
     }
@@ -2491,12 +2487,13 @@ const generatePdf = (appState: AppState, filterType: 'all' | 'cash' | 'online' =
                 }
             }
         },
-         didDrawPage: (hookData) => {
-            drawFullHeader(doc);
-            addPunchMark(doc);
-            hookData.settings.startY = 68;
-        }
+        didDrawPage: pageDrawHook,
     });
+    
+    // Draw initial header and punch mark on the first page
+    drawFullHeader(doc);
+    addPunchMark(doc);
+
 
     doc.save(`Report-MOB-${filterType}-${appState.selectedDate}.pdf`);
 };
