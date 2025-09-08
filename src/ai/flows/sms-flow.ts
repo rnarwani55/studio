@@ -39,6 +39,54 @@ const SmsFlowOutputSchema = z.object({
     error: z.string().optional(),
 });
 
+
+const sendSmsTool = ai.defineTool(
+    {
+        name: 'sendSmsTool',
+        description: 'Sends an SMS message using Twilio',
+        inputSchema: z.object({
+            to: z.string(),
+            body: z.string(),
+        }),
+        outputSchema: z.object({
+            success: z.boolean(),
+            messageId: z.string().optional(),
+            error: z.string().optional(),
+        }),
+    },
+    async ({ to, body }) => {
+        const accountSid = process.env.TWILIO_ACCOUNT_SID;
+        const authToken = process.env.TWILIO_AUTH_TOKEN;
+        const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+        if (!accountSid || !authToken || !messagingServiceSid) {
+            return {
+                success: false,
+                error: 'Twilio environment variables (accountSid, authToken, messagingServiceSid) are not fully configured.',
+            };
+        }
+
+        const client = new Twilio(accountSid, authToken);
+
+        try {
+            const message = await client.messages.create({
+                body: body.trim(),
+                messagingServiceSid: messagingServiceSid,
+                to: to,
+            });
+
+            return { success: true, messageId: message.sid };
+        } catch (error: any) {
+            console.error('Twilio Error:', error);
+            return {
+                success: false,
+                error: error.message || 'Failed to send SMS via tool.',
+            };
+        }
+    }
+);
+
+
 export async function sendSmsReport(data: SmsReportData): Promise<z.infer<typeof SmsFlowOutputSchema>> {
     return smsReportFlow(data);
 }
@@ -48,21 +96,17 @@ const smsReportFlow = ai.defineFlow(
         name: 'smsReportFlow',
         inputSchema: SmsReportDataSchema,
         outputSchema: SmsFlowOutputSchema,
+        tools: [sendSmsTool],
     },
     async (data) => {
-        const accountSid = process.env.TWILIO_ACCOUNT_SID;
-        const authToken = process.env.TWILIO_AUTH_TOKEN;
-        const fromNumber = process.env.TWILIO_PHONE_NUMBER;
         const toNumber = process.env.ADMIN_PHONE_NUMBER;
 
-        if (!accountSid || !authToken || !fromNumber || !toNumber) {
+        if (!toNumber) {
             return {
                 success: false,
-                error: 'Twilio environment variables are not configured.',
+                error: 'Admin phone number is not configured. Please set ADMIN_PHONE_NUMBER in your environment variables.',
             };
         }
-
-        const client = new Twilio(accountSid, authToken);
 
         // Construct the message body
         let body = `MOB Daily Report: ${data.date}\n\n`;
@@ -97,23 +141,6 @@ const smsReportFlow = ai.defineFlow(
             });
         }
 
-        try {
-            const message = await client.messages.create({
-                body: body.trim(),
-                from: fromNumber,
-                to: toNumber,
-            });
-
-            return {
-                success: true,
-                messageId: message.sid,
-            };
-        } catch (error: any) {
-            console.error('Twilio Error:', error);
-            return {
-                success: false,
-                error: error.message || 'Failed to send SMS.',
-            };
-        }
+        return await sendSmsTool({ to: toNumber, body });
     }
 );
