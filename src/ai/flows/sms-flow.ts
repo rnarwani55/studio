@@ -39,6 +39,46 @@ const SmsFlowOutputSchema = z.object({
     error: z.string().optional(),
 });
 
+// Define the tool for sending an SMS
+const sendSmsTool = ai.defineTool(
+  {
+    name: 'sendSms',
+    description: 'Sends an SMS message using Twilio',
+    inputSchema: z.object({
+      to: z.string().describe('The recipient phone number'),
+      body: z.string().describe('The content of the message'),
+    }),
+    outputSchema: SmsFlowOutputSchema,
+  },
+  async (input) => {
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    const fromNumber = process.env.TWILIO_PHONE_NUMBER;
+    const messagingServiceSid = process.env.TWILIO_MESSAGING_SERVICE_SID;
+
+    if (!accountSid || !authToken || (!fromNumber && !messagingServiceSid)) {
+      return {
+        success: false,
+        error: 'Twilio environment variables are not fully configured.',
+      };
+    }
+    const client = new Twilio(accountSid, authToken);
+    try {
+      const message = await client.messages.create({
+        body: input.body,
+        to: input.to,
+        from: fromNumber, // Can be your Twilio phone number
+        messagingServiceSid: messagingServiceSid, // Or your Messaging Service SID
+      });
+      return { success: true, messageId: message.sid };
+    } catch (error: any) {
+      console.error('Twilio Error:', error);
+      return { success: false, error: error.message || 'Failed to send SMS.' };
+    }
+  }
+);
+
+
 export async function sendSmsReport(data: SmsReportData): Promise<z.infer<typeof SmsFlowOutputSchema>> {
     return smsReportFlow(data);
 }
@@ -50,19 +90,14 @@ const smsReportFlow = ai.defineFlow(
         outputSchema: SmsFlowOutputSchema,
     },
     async (data) => {
-        const accountSid = process.env.TWILIO_ACCOUNT_SID;
-        const authToken = process.env.TWILIO_AUTH_TOKEN;
-        const fromNumber = process.env.TWILIO_PHONE_NUMBER;
         const toNumber = process.env.ADMIN_PHONE_NUMBER;
 
-        if (!accountSid || !authToken || !fromNumber || !toNumber) {
+        if (!toNumber) {
             return {
                 success: false,
-                error: 'Twilio environment variables are not configured.',
+                error: 'Admin phone number (ADMIN_PHONE_NUMBER) is not configured.',
             };
         }
-
-        const client = new Twilio(accountSid, authToken);
 
         // Construct the message body
         let body = `MOB Daily Report: ${data.date}\n\n`;
@@ -96,24 +131,8 @@ const smsReportFlow = ai.defineFlow(
                 body += `- ${staff.name}: ${staff.status}\n`;
             });
         }
-
-        try {
-            const message = await client.messages.create({
-                body: body.trim(),
-                from: fromNumber,
-                to: toNumber,
-            });
-
-            return {
-                success: true,
-                messageId: message.sid,
-            };
-        } catch (error: any) {
-            console.error('Twilio Error:', error);
-            return {
-                success: false,
-                error: error.message || 'Failed to send SMS.',
-            };
-        }
+        
+        // Use the tool to send the SMS
+        return await sendSmsTool({ to: toNumber, body: body.trim() });
     }
 );
